@@ -28,6 +28,8 @@ struct Args {
     /// In cases where gas is available, the amount of provided gas.
     #[arg(long)]
     available_gas: Option<usize>,
+    #[structopt(long = "--proof_mode")]
+    proof_mode: bool,
     /// Whether to print the memory.
     #[arg(long, default_value_t = false)]
     print_full_memory: bool,
@@ -75,6 +77,7 @@ fn main() -> anyhow::Result<()> {
             runner.find_function("::main")?,
             &[],
             args.available_gas,
+            args.proof_mode,
             StarknetState::default(),
         )
         .with_context(|| "Failed to run the function.")?;

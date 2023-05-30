@@ -258,6 +258,7 @@ fn run_tests(
                     runner.find_function(name.as_str())?,
                     &[],
                     test.available_gas,
+                    false,
                     Default::default(),
                 )
                 .with_context(|| format!("Failed to run the function `{}`.", name.as_str()))?;

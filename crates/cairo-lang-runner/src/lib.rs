@@ -138,6 +138,7 @@ impl SierraCasmRunner {
         func: &Function,
         args: &[Arg],
         available_gas: Option<usize>,
+        proof_mode: bool,
         starknet_state: StarknetState,
     ) -> Result<RunResult, RunnerError> {
         let initial_gas = self.get_initial_available_gas(func, available_gas)?;
@@ -165,6 +166,7 @@ impl SierraCasmRunner {
                     .map_err(|e| Box::new(e.into()))?;
                 Ok(())
             },
+            proof_mode,
             starknet_state,
         )?;
         let mut results_data = self.get_results_data(func, &cells, ap)?;

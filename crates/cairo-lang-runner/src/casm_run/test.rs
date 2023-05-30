@@ -107,6 +107,7 @@ fn test_runner(function: CasmContext, n_returns: usize, expected: &[i128]) {
         function.instructions.iter(),
         vec![],
         |_| Ok(()),
+        false,
         StarknetState::default(),
     )
     .expect("Running code failed.");
@@ -131,6 +132,7 @@ fn test_allocate_segment() {
         .iter(),
         vec![],
         |_| Ok(()),
+        false,
         StarknetState::default(),
     )
     .expect("Running code failed.");

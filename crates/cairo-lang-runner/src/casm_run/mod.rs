@@ -72,6 +72,8 @@ pub struct CairoHintProcessor<'a> {
     pub string_to_hint: HashMap<String, Hint>,
     // The starknet state.
     pub starknet_state: StarknetState,
+    // Enable proof mode in the vm.
+    pub proof_mode: bool,
 }
 
 impl<'a> CairoHintProcessor<'a> {
@@ -79,6 +81,7 @@ impl<'a> CairoHintProcessor<'a> {
         runner: Option<&'a SierraCasmRunner>,
         instructions: Instructions,
         starknet_state: StarknetState,
+        proof_mode: bool,
     ) -> Self {
         let mut hints_dict: HashMap<usize, Vec<HintParams>> = HashMap::new();
         let mut string_to_hint: HashMap<String, Hint> = HashMap::new();
@@ -99,7 +102,7 @@ impl<'a> CairoHintProcessor<'a> {
             }
             hint_offset += instruction.body.op_size();
         }
-        CairoHintProcessor { runner, hints_dict, string_to_hint, starknet_state }
+        CairoHintProcessor { runner, hints_dict, string_to_hint, starknet_state, proof_mode }
     }
 }
 
@@ -532,6 +535,7 @@ impl HintProcessor for CairoHintProcessor<'_> {
                                     function,
                                     &[Arg::Array(values)],
                                     Some(*gas_counter),
+                                    self.proof_mode,
                                     self.starknet_state.clone(),
                                 )
                                 .expect("Internal runner error.");
@@ -624,6 +628,7 @@ impl HintProcessor for CairoHintProcessor<'_> {
                                 function,
                                 &[Arg::Array(values)],
                                 Some(*gas_counter),
+                                self.proof_mode,
                                 self.starknet_state.clone(),
                             )
                             .expect("Internal runner error.");
@@ -687,6 +692,7 @@ impl HintProcessor for CairoHintProcessor<'_> {
                                 function,
                                 &[Arg::Array(values)],
                                 Some(*gas_counter),
+                                self.proof_mode,
                                 self.starknet_state.clone(),
                             )
                             .expect("Internal runner error.");
@@ -1337,6 +1343,7 @@ pub fn run_function<'a, 'b: 'a, Instructions: Iterator<Item = &'a Instruction> +
     additional_initialization: fn(
         context: RunFunctionContext<'_>,
     ) -> Result<(), Box<VirtualMachineError>>,
+    proof_mode: bool,
     starknet_state: StarknetState,
 ) -> Result<RunFunctionRes, Box<VirtualMachineError>> {
     let data: Vec<MaybeRelocatable> = instructions
@@ -1346,7 +1353,8 @@ pub fn run_function<'a, 'b: 'a, Instructions: Iterator<Item = &'a Instruction> +
         .map(MaybeRelocatable::from)
         .collect();
 
-    let mut hint_processor = CairoHintProcessor::new(runner, instructions, starknet_state);
+    let mut hint_processor =
+        CairoHintProcessor::new(runner, instructions, starknet_state, proof_mode);
 
     let data_len = data.len();
     let program = Program {
@@ -1363,7 +1371,7 @@ pub fn run_function<'a, 'b: 'a, Instructions: Iterator<Item = &'a Instruction> +
         error_message_attributes: vec![],
         instruction_locations: None,
     };
-    let mut runner = CairoRunner::new(&program, "all_cairo", false)
+    let mut runner = CairoRunner::new(&program, "all_cairo", proof_mode)
         .map_err(VirtualMachineError::from)
         .map_err(Box::new)?;
     let mut vm = VirtualMachine::new(true);

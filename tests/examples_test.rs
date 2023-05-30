@@ -196,6 +196,7 @@ fn run_function(
             runner.find_function("").expect("Failed finding the function."),
             &params.iter().cloned().map(Arg::Value).collect_vec(),
             available_gas,
+            false,
             Default::default(),
         )
         .expect("Failed running the function.");
