@@ -1,8 +1,6 @@
 use std::ops::Deref;
 
 use cairo_lang_debug::DebugWithDb;
-use cairo_lang_plugins::get_default_plugins;
-use cairo_lang_semantic::db::SemanticGroup;
 use cairo_lang_semantic::test_utils::setup_test_function;
 use cairo_lang_utils::ordered_hash_map::OrderedHashMap;
 
@@ -11,8 +9,8 @@ use crate::db::LoweringGroup;
 use crate::fmt::LoweredFormatter;
 use crate::ids::ConcreteFunctionWithBodyId;
 use crate::inline::apply_inlining;
-use crate::optimizations::delay_var_def::delay_var_def;
 use crate::optimizations::remappings::optimize_remappings;
+use crate::optimizations::reorder_statements::reorder_statements;
 use crate::panic::lower_panics;
 use crate::reorganize_blocks::reorganize_blocks;
 use crate::test_utils::LoweringDatabaseForTesting;
@@ -29,7 +27,6 @@ cairo_lang_test_utils::test_file_test!(
 
 fn test_match_optimizer(inputs: &OrderedHashMap<String, String>) -> OrderedHashMap<String, String> {
     let db = &mut LoweringDatabaseForTesting::default();
-    db.set_semantic_plugins(get_default_plugins());
     let (test_function, semantic_diagnostics) = setup_test_function(
         db,
         inputs["function"].as_str(),
@@ -48,7 +45,7 @@ fn test_match_optimizer(inputs: &OrderedHashMap<String, String>) -> OrderedHashM
     before = lower_panics(db, function_id, &before).unwrap();
     reorganize_blocks(&mut before);
     optimize_remappings(&mut before);
-    delay_var_def(&mut before);
+    reorder_statements(db, &mut before);
 
     let mut after = before.clone();
     optimize_matches(&mut after);
@@ -57,11 +54,11 @@ fn test_match_optimizer(inputs: &OrderedHashMap<String, String>) -> OrderedHashM
         ("semantic_diagnostics".into(), semantic_diagnostics),
         (
             "before".into(),
-            format!("{:?}", before.debug(&LoweredFormatter { db, variables: &before.variables })),
+            format!("{:?}", before.debug(&LoweredFormatter::new(db, &before.variables))),
         ),
         (
             "after".into(),
-            format!("{:?}", after.debug(&LoweredFormatter { db, variables: &after.variables })),
+            format!("{:?}", after.debug(&LoweredFormatter::new(db, &after.variables))),
         ),
         ("lowering_diagnostics".into(), lowering_diagnostics.format(db)),
     ])

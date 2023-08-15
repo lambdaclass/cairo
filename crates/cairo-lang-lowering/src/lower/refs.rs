@@ -1,9 +1,12 @@
 use cairo_lang_defs::ids::MemberId;
+use cairo_lang_proc_macros::DebugWithDb;
 use cairo_lang_semantic as semantic;
+use cairo_lang_semantic::expr::fmt::ExprFormatter;
 use cairo_lang_utils::extract_matches;
 use cairo_lang_utils::ordered_hash_map::OrderedHashMap;
 
 use super::usage::MemberPath;
+use crate::db::LoweringGroup;
 use crate::VariableId;
 
 /// Maps member paths ([MemberPath]) to lowered variable ids.
@@ -12,8 +15,20 @@ pub struct SemanticLoweringMapping {
     scattered: OrderedHashMap<MemberPath, Value>,
 }
 impl SemanticLoweringMapping {
-    pub fn contains_var(&mut self, var: &semantic::VarId) -> bool {
-        self.scattered.contains_key(&MemberPath::Var(*var))
+    pub fn topmost_containing_member_path(
+        &mut self,
+        mut member_path: MemberPath,
+    ) -> Option<MemberPath> {
+        let mut res = None;
+        loop {
+            if self.scattered.contains_key(&member_path) {
+                res = Some(member_path.clone());
+            }
+            let MemberPath::Member { parent, .. } = member_path else {
+                return res;
+            };
+            member_path = *parent;
+        }
     }
 
     pub fn get<TContext: StructRecomposer>(
@@ -102,10 +117,12 @@ pub trait StructRecomposer {
         members: Vec<VariableId>,
     ) -> VariableId;
     fn var_ty(&self, var: VariableId) -> semantic::TypeId;
+    fn db(&self) -> &dyn LoweringGroup;
 }
 
 /// An intermediate value for a member path.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DebugWithDb)]
+#[debug_db(ExprFormatter<'a>)]
 enum Value {
     /// The value of member path is stored in a lowered variable.
     Var(VariableId),
@@ -115,7 +132,8 @@ enum Value {
 }
 
 /// A value for an non-stored member path. Recursively holds the [Value] for the members.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, DebugWithDb)]
+#[debug_db(ExprFormatter<'a>)]
 struct Scattered {
     concrete_struct_id: semantic::ConcreteStructId,
     members: OrderedHashMap<MemberId, Value>,

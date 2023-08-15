@@ -56,7 +56,7 @@ test_expr_diagnostics
 {
   foo();
   core::felt252_add(1,1);
-  test::foo();
+  submod::foo();
   bad_module::foo();
   super::foo();
   test::super::foo();
@@ -65,24 +65,28 @@ test_expr_diagnostics
 //! > module_code
 fn foo() {
 }
+mod submod {
+  fn foo() {
+  }
+}
 
 //! > function_body
 
 //! > expected_diagnostics
 error: Identifier not found.
- --> lib.cairo:8:3
+ --> lib.cairo:12:3
   bad_module::foo();
   ^********^
 
 error: 'super' cannot be used for the crate's root module.
- --> lib.cairo:9:3
+ --> lib.cairo:13:3
   super::foo();
   ^***^
 
-error: Invalid path.
- --> lib.cairo:10:9
+error: Identifier not found.
+ --> lib.cairo:14:3
   test::super::foo();
-        ^***^
+  ^**^
 
 //! > ==========================================================================
 
@@ -180,15 +184,15 @@ fn foo() {
 //! > function_body
 
 //! > expected_diagnostics
-error: Trait has no implementation in context: core::integer::NumericLiteral::<core::zeroable::NonZero>
- --> lib.cairo:7:13
-    let b = 123_NonZero;
-            ^*********^
-
 error: Unknown type.
  --> lib.cairo:8:13
     let b = 123_u129;
             ^******^
+
+error: Mismatched types. The type core::zeroable::NonZero cannot be created from a numeric literal.
+ --> lib.cairo:7:13
+    let b = 123_NonZero;
+            ^*********^
 
 //! > ==========================================================================
 
@@ -202,18 +206,18 @@ test_expr_diagnostics
 }
 
 //! > module_code
-mod A {
+mod a {
   use super::B;
 }
 
-use A::B;
+use a::B;
 
 //! > function_body
 
 //! > expected_diagnostics
 error: Cycle detected while resolving 'use' items.
  --> lib.cairo:5:8
-use A::B;
+use a::B;
        ^
 
 //! > ==========================================================================

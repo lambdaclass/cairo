@@ -6,14 +6,14 @@ Starknet contracts can be written in Cairo.
 
 [source,rust]
 ----
-#[contract]
+#[starknet::contract]
 mod my_contract {
     struct Storage {
         x: felt252,
         m: LegacyMap::<felt252, u128>,
     }
 
-    #[external]
+    #[external(v0)]
     fn foo(value: felt252) -> felt252 {
         let y = x::read() + value;
         m::write(y, 3_u128);
@@ -24,7 +24,7 @@ mod my_contract {
 
 A contract is written as an inline module, with designated attributes.
 
-The main attribute is the `#[contract]` attribute that makes the starknet plugin treat the module as
+The main attribute is the `#[starknet::contract]` attribute that makes the starknet plugin treat the module as
 a contract.
 
 == Storage
@@ -45,8 +45,8 @@ For example, for the storage member `x` above, access is done using `x::read()` 
 `x::write(value)`.
 
 Defining a mapping storage member is done using the `LegacyMap` "type" that is expanded by
-the Starknet plugin. The keys must implement the `LegacyHash` trait and the values must implement
-the `StorageAccess` trait.
+the Starknet plugin. The keys must implement the `Hash` trait and the values must implement the
+`StorageAccess` trait.
 Accessing such storage members is done using the `::read(key)` and
 `::write(key, value)` functions which are also automatically created by the Starknet plugin.
 For example, for the storage member `m` above, access is done using `m::read(key)` and
@@ -60,30 +60,32 @@ When a contract is deployed, all of its storage variables are default-initialize
 Starknet contracts have no main() function. Instead, each function may be annotated as a special
 function using one of the attributes below:
 
-- `#[external]` functions may be called by Starknet users or by other contracts. For example:
+- `#[external(v0)]` functions may be called by Starknet users or by other contracts. For example:
 [source]
 ----
-    #[external]
-    fn external_example(value: felt252) {
+    #[external(v0)]
+    fn external_example(ref self: ContractState, value: felt252) {
         x::write(value);
     }
 ----
-- `#[view]` functions are similar to external functions, but they may not modify the contract’s
-storage. For example:
+Note the first parameter. It represents the state of the contract storage.
+The `ref` modifier means that the state may change - by writing to storage, for example.
+Another possibility is to get a read-only reference to the storage:
 [source]
 ----
-    #[view]
-    fn view_example() -> felt252 {
+    #[external(v0)]
+    fn view_example(self: @ContractState) -> felt252 {
         x::read(value)
     }
 ----
+This is a view function - it can only read from the storage.
 - `#[constructor]` function is called when the contract is deployed. There may be only one such
-function. If it is not defined, the contract is deployed with all storage variables
-default-initialized. For example:
+function and it must be called `constructor`. If it is not defined, the contract is deployed with
+all storage variables default-initialized. For example:
 [source]
 ----
     #[constructor]
-    fn constructor_example() {
+    fn constructor() {
         x::write(3);
     }
 ----
@@ -136,15 +138,11 @@ your code.
 For example, the contract interface for `my_contract` above can be manually written as:
 [source,rust]
 ----
-#[abi]
+#[starknet::interface]
 trait IMyContract {
-    #[external]
     fn foo(value: felt252) -> felt252;
 }
 ----
-
-Note that the same `\#[external]`/`#[view]`/`#[event]` attributes must be used in the contract
-interface as in an implemented contract.
 
 === Using the Contract Interface Dispatcher
 
@@ -157,23 +155,23 @@ in the following way:
 
 [source,rust]
 ----
-#[abi]
-trait IMyContract {
-    #[external]
-    fn foo(value: felt252) -> felt252;
+#[starknet::interface]
+trait IMyContract<TContractState> {
+    fn foo(ref self: TContractState, value: felt252) -> felt252;
 }
 
-#[contract]
-mod MySecondContract {
+#[starknet::contract]
+mod my_second_contract {
     use super::IMyContractDispatcherTrait;
     use super::IMyContractDispatcher;
 
-    #[external]
+    #[external(v0)]
     fn call_foo(
         another_contract_address: starknet::ContractAddress,
         a: felt252
     ) -> felt252 {
-        IMyContractDispatcher { contract_address: another_contract_address }.foo(a)
+        let mut dispatcher = IMyContractDispatcher { contract_address: another_contract_address };
+        dispatcher.foo(a)
     }
 }
 ----
@@ -186,18 +184,17 @@ This can be done using the library-dispatcher in the following way:
 
 [source,rust]
 ----
-#[abi]
+#[starknet::interface]
 trait IMyContract {
-    #[external]
     fn foo(value: felt252);
 }
 
-#[contract]
-mod MySecondContract {
+#[starknet::contract]
+mod my_second_contract {
     use super::IMyContractDispatcherTrait;
     use super::IMyContractLibraryDispatcher;
 
-    #[external]
+    #[external(v0)]
     fn libcall_foo(a: felt252) -> felt252 {
         IMyContractLibraryDispatcher { class_hash: starknet::class_hash_const::<0x1234>() }.foo(a)
     }
@@ -221,9 +218,9 @@ keccak hash of the function name - in this case `starknet_keccak("foo")`.
 
 [source,rust]
 ----
-#[contract]
-mod MySecondContract {
-    #[external]
+#[starknet::contract]
+mod my_second_contract {
+    #[external(v0)]
     fn syscall_call_another_contract(
         address: starknet::ContractAddress, selector: felt252, calldata: Array<felt252>
     ) -> Span::<felt252> {

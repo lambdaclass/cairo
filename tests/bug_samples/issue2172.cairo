@@ -1,5 +1,3 @@
-use box::BoxTrait;
-
 struct Node {
     value: felt252,
     left: Option<Box<Node>>,
@@ -10,10 +8,10 @@ fn traverse(node: Node) nopanic {
     let Node{value, left, right } = node;
     match left {
         Option::Some(x) => traverse(x.unbox()),
-        Option::None(_) => {},
+        Option::None => {},
     }
     match right {
         Option::Some(x) => traverse(x.unbox()),
-        Option::None(_) => {},
+        Option::None => {},
     }
 }

@@ -2,10 +2,8 @@
 mod test;
 
 pub mod consts;
-use std::sync::Arc;
 
 use cairo_lang_defs::plugin::{MacroPlugin, PluginResult};
-use cairo_lang_semantic::plugin::{AsDynMacroPlugin, SemanticPlugin};
 use cairo_lang_syntax::node::ast;
 use cairo_lang_syntax::node::db::SyntaxGroup;
 use cairo_lang_syntax::node::helpers::QueryAttrs;
@@ -15,7 +13,7 @@ pub mod aux_data;
 mod contract;
 mod dispatcher;
 mod entry_point;
-mod events;
+pub mod events;
 mod storage;
 mod storage_access;
 mod utils;
@@ -24,8 +22,7 @@ use dispatcher::handle_trait;
 use events::derive_event_needed;
 use storage_access::derive_storage_access_needed;
 
-use self::contract::{handle_contract_by_storage, handle_module};
-use self::events::{handle_enum, handle_function};
+use self::contract::{handle_module, handle_module_by_storage};
 
 #[derive(Debug, Default)]
 #[non_exhaustive]
@@ -42,22 +39,17 @@ impl MacroPlugin for StarkNetPlugin {
             ast::Item::Struct(struct_ast) if derive_storage_access_needed(&struct_ast, db) => {
                 storage_access::handle_struct(db, struct_ast)
             }
-            ast::Item::Struct(struct_ast) if struct_ast.has_attr(db, "starknet::storage") => {
-                handle_contract_by_storage(db, struct_ast).unwrap_or_default()
+            ast::Item::Struct(struct_ast) if struct_ast.has_attr(db, STORAGE_ATTR) => {
+                handle_module_by_storage(db, struct_ast).unwrap_or_default()
             }
-            ast::Item::Enum(enum_ast) => handle_enum(db, enum_ast),
-            ast::Item::FreeFunction(function_ast) => handle_function(db, function_ast),
+            ast::Item::Enum(enum_ast) if derive_storage_access_needed(&enum_ast, db) => {
+                storage_access::handle_enum(db, enum_ast)
+            }
+            ast::Item::Enum(enum_ast) if derive_event_needed(&enum_ast, db) => {
+                events::handle_enum(db, enum_ast)
+            }
             // Nothing to do for other items.
             _ => PluginResult::default(),
         }
     }
 }
-impl AsDynMacroPlugin for StarkNetPlugin {
-    fn as_dyn_macro_plugin<'a>(self: Arc<Self>) -> Arc<dyn MacroPlugin + 'a>
-    where
-        Self: 'a,
-    {
-        self
-    }
-}
-impl SemanticPlugin for StarkNetPlugin {}

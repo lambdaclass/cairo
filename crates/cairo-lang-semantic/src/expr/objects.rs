@@ -11,9 +11,19 @@ use super::pattern::Pattern;
 use crate::items::imp::ImplId;
 use crate::{semantic, ConcreteStructId, FunctionId, TypeId};
 
+pub type PatternId = Id<Pattern>;
 pub type ExprId = Id<Expr>;
 pub type StatementId = Id<Statement>;
 
+impl DebugWithDb<ExprFormatter<'_>> for PatternId {
+    fn fmt(
+        &self,
+        f: &mut std::fmt::Formatter<'_>,
+        expr_formatter: &ExprFormatter<'_>,
+    ) -> std::fmt::Result {
+        expr_formatter.db.pattern_semantic(expr_formatter.function_id, *self).fmt(f, expr_formatter)
+    }
+}
 impl DebugWithDb<ExprFormatter<'_>> for ExprId {
     fn fmt(
         &self,
@@ -69,7 +79,7 @@ pub struct StatementExpr {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, DebugWithDb, SemanticObject)]
 #[debug_db(ExprFormatter<'a>)]
 pub struct StatementLet {
-    pub pattern: Pattern,
+    pub pattern: PatternId,
     pub expr: ExprId,
     #[hide_field_debug_with_db]
     #[dont_rewrite]
@@ -110,6 +120,7 @@ pub enum Expr {
     Snapshot(ExprSnapshot),
     Desnap(ExprDesnap),
     Assignment(ExprAssignment),
+    LogicalOperator(ExprLogicalOperator),
     Block(ExprBlock),
     Loop(ExprLoop),
     FunctionCall(ExprFunctionCall),
@@ -117,6 +128,7 @@ pub enum Expr {
     If(ExprIf),
     Var(ExprVar),
     Literal(ExprLiteral),
+    StringLiteral(ExprStringLiteral),
     MemberAccess(ExprMemberAccess),
     StructCtor(ExprStructCtor),
     EnumVariantCtor(ExprEnumVariantCtor),
@@ -131,6 +143,7 @@ impl Expr {
             Expr::Tuple(expr) => expr.ty,
             Expr::Snapshot(expr) => expr.ty,
             Expr::Desnap(expr) => expr.ty,
+            Expr::LogicalOperator(expr) => expr.ty,
             Expr::Block(expr) => expr.ty,
             Expr::Loop(expr) => expr.ty,
             Expr::FunctionCall(expr) => expr.ty,
@@ -138,6 +151,7 @@ impl Expr {
             Expr::If(expr) => expr.ty,
             Expr::Var(expr) => expr.ty,
             Expr::Literal(expr) => expr.ty,
+            Expr::StringLiteral(expr) => expr.ty,
             Expr::MemberAccess(expr) => expr.ty,
             Expr::StructCtor(expr) => expr.ty,
             Expr::EnumVariantCtor(expr) => expr.ty,
@@ -152,6 +166,7 @@ impl Expr {
             Expr::Tuple(expr) => expr.stable_ptr,
             Expr::Snapshot(expr) => expr.stable_ptr,
             Expr::Desnap(expr) => expr.stable_ptr,
+            Expr::LogicalOperator(expr) => expr.stable_ptr,
             Expr::Block(expr) => expr.stable_ptr,
             Expr::Loop(expr) => expr.stable_ptr,
             Expr::FunctionCall(expr) => expr.stable_ptr,
@@ -159,6 +174,7 @@ impl Expr {
             Expr::If(expr) => expr.stable_ptr,
             Expr::Var(expr) => expr.stable_ptr,
             Expr::Literal(expr) => expr.stable_ptr,
+            Expr::StringLiteral(expr) => expr.stable_ptr,
             Expr::MemberAccess(expr) => expr.stable_ptr,
             Expr::StructCtor(expr) => expr.stable_ptr,
             Expr::EnumVariantCtor(expr) => expr.stable_ptr,
@@ -321,7 +337,7 @@ pub struct ExprIf {
 #[derive(Clone, Debug, Hash, PartialEq, Eq, DebugWithDb, SemanticObject)]
 #[debug_db(ExprFormatter<'a>)]
 pub struct MatchArm {
-    pub pattern: Pattern,
+    pub pattern: PatternId,
     pub expression: ExprId,
 }
 
@@ -331,6 +347,26 @@ pub struct ExprAssignment {
     pub ref_arg: ExprVarMemberPath,
     pub rhs: semantic::ExprId,
     // ExprAssignment is always of unit type.
+    pub ty: semantic::TypeId,
+    #[hide_field_debug_with_db]
+    #[dont_rewrite]
+    pub stable_ptr: ast::ExprPtr,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum LogicalOperator {
+    AndAnd,
+    OrOr,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, DebugWithDb, SemanticObject)]
+#[debug_db(ExprFormatter<'a>)]
+pub struct ExprLogicalOperator {
+    pub lhs: semantic::ExprId,
+    #[dont_rewrite]
+    pub op: LogicalOperator,
+    pub rhs: semantic::ExprId,
+    // ExprLogicalOperator is always of bool type.
     pub ty: semantic::TypeId,
     #[hide_field_debug_with_db]
     #[dont_rewrite]
@@ -350,6 +386,7 @@ impl<'a> DebugWithDb<ExprFormatter<'a>> for ExprVar {
     }
 }
 
+// TODO(yuval): rename to ExprNumericLiteral.
 #[derive(Clone, Debug, Hash, PartialEq, Eq, DebugWithDb, SemanticObject)]
 #[debug_db(ExprFormatter<'a>)]
 pub struct ExprLiteral {
@@ -357,6 +394,17 @@ pub struct ExprLiteral {
     pub value: BigInt,
     #[hide_field_debug_with_db]
     pub numeric_impl: ImplId,
+    pub ty: semantic::TypeId,
+    #[hide_field_debug_with_db]
+    #[dont_rewrite]
+    pub stable_ptr: ast::ExprPtr,
+}
+
+#[derive(Clone, Debug, Hash, PartialEq, Eq, DebugWithDb, SemanticObject)]
+#[debug_db(ExprFormatter<'a>)]
+pub struct ExprStringLiteral {
+    #[dont_rewrite]
+    pub value: String,
     pub ty: semantic::TypeId,
     #[hide_field_debug_with_db]
     #[dont_rewrite]

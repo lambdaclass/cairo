@@ -1,12 +1,15 @@
+use std::ops::Deref;
 use std::sync::Arc;
 
 use cairo_lang_defs::diagnostic_utils::StableLocation;
-use cairo_lang_defs::ids::{LanguageElementId, ModuleId, ModuleItemId};
+use cairo_lang_defs::ids::{LanguageElementId, ModuleId, ModuleItemId, TraitId};
 use cairo_lang_diagnostics::{Diagnostics, DiagnosticsBuilder, Maybe};
 use cairo_lang_syntax::attribute::structured::{Attribute, AttributeListStructurize};
 use cairo_lang_utils::ordered_hash_map::OrderedHashMap;
+use cairo_lang_utils::ordered_hash_set::OrderedHashSet;
 use smol_str::SmolStr;
 
+use super::us::SemanticUseEx;
 use crate::corelib::core_module;
 use crate::db::SemanticGroup;
 use crate::diagnostic::SemanticDiagnosticKind;
@@ -46,10 +49,8 @@ pub fn priv_module_semantic_data(
         };
 
         if items.insert(name.clone(), *item).is_some() {
-            let stable_location = StableLocation::new(
-                item.module_file_id(def_db),
-                db.module_item_name_stable_ptr(module_id, *item)?,
-            );
+            let stable_location =
+                StableLocation::new(db.module_item_name_stable_ptr(module_id, *item)?);
             let kind = SemanticDiagnosticKind::NameDefinedMultipleTimes { name: name.clone() };
             diagnostics.add(SemanticDiagnostic::new(stable_location, kind));
         }
@@ -98,4 +99,33 @@ pub fn module_attributes(db: &dyn SemanticGroup, module_id: ModuleId) -> Maybe<V
             module_ast.attributes(syntax_db).structurize(syntax_db)
         }
     })
+}
+
+/// Finds all the trait ids usable in the current context.
+pub fn module_usable_trait_ids(
+    db: &dyn SemanticGroup,
+    module_id: ModuleId,
+) -> Maybe<Arc<OrderedHashSet<TraitId>>> {
+    let mut module_traits =
+        OrderedHashSet::from_iter(db.module_traits_ids(module_id)?.deref().clone());
+    // Add traits from impls in the module.
+    for imp in db.module_impls_ids(module_id)?.iter().copied() {
+        let trait_id = db.impl_def_trait(imp)?;
+        module_traits.insert(trait_id);
+    }
+    // Add traits from uses in the module.
+    for use_id in db.module_uses_ids(module_id)?.iter().copied() {
+        match db.use_resolved_item(use_id)? {
+            // use of a trait.
+            ResolvedGenericItem::Trait(trait_id) => {
+                module_traits.insert(trait_id);
+            }
+            // use of an impl from which we get the trait.
+            ResolvedGenericItem::Impl(impl_def_id) => {
+                module_traits.insert(db.impl_def_trait(impl_def_id)?);
+            }
+            _ => {}
+        };
+    }
+    Ok(module_traits.into())
 }

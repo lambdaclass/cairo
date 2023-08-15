@@ -18,7 +18,7 @@ pub enum SyntaxKind {
     ExprParenthesized,
     ExprUnary,
     ExprBinary,
-    ExprTuple,
+    ExprListParenthesized,
     ExprFunctionCall,
     ArgListParenthesized,
     OptionArgListParenthesizedEmpty,
@@ -40,6 +40,9 @@ pub enum SyntaxKind {
     StructArgTail,
     StructArgList,
     ArgListBraced,
+    ExprListBracketed,
+    ExprListBraced,
+    WrappedExprListMissing,
     PatternIdentifier,
     PatternStruct,
     PatternStructParamList,
@@ -47,6 +50,8 @@ pub enum SyntaxKind {
     PatternList,
     PatternStructParamWithExpr,
     PatternEnum,
+    PatternEnumInnerPattern,
+    OptionPatternEnumInnerPatternEmpty,
     TypeClause,
     OptionTypeClauseEmpty,
     ReturnTypeClause,
@@ -71,6 +76,8 @@ pub enum SyntaxKind {
     FunctionSignature,
     Member,
     MemberList,
+    Variant,
+    VariantList,
     ItemList,
     ItemMissing,
     Attribute,
@@ -117,6 +124,8 @@ pub enum SyntaxKind {
     TerminalLiteralNumber,
     TokenShortString,
     TerminalShortString,
+    TokenString,
+    TerminalString,
     TokenAs,
     TerminalAs,
     TokenConst,
@@ -271,6 +280,7 @@ impl SyntaxKind {
             SyntaxKind::TokenIdentifier
                 | SyntaxKind::TokenLiteralNumber
                 | SyntaxKind::TokenShortString
+                | SyntaxKind::TokenString
                 | SyntaxKind::TokenAs
                 | SyntaxKind::TokenConst
                 | SyntaxKind::TokenElse
@@ -354,6 +364,7 @@ impl SyntaxKind {
             SyntaxKind::TerminalIdentifier
                 | SyntaxKind::TerminalLiteralNumber
                 | SyntaxKind::TerminalShortString
+                | SyntaxKind::TerminalString
                 | SyntaxKind::TerminalAs
                 | SyntaxKind::TerminalConst
                 | SyntaxKind::TerminalElse

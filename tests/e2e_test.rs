@@ -46,12 +46,17 @@ cairo_lang_test_utils::test_file_test_with_runner!(
         enum_snapshot: "enum_snapshot",
         felt252_dict: "felt252_dict",
         felt252: "felt252",
-        gas: "gas",
+        i128: "i128",
+        i16: "i16",
+        i32: "i32",
+        i64: "i64",
+        i8: "i8",
         nullable: "nullable",
         poseidon: "poseidon",
         snapshot: "snapshot",
         u128: "u128",
         u16: "u16",
+        bytes31: "bytes31",
         u256: "u256",
         u32: "u32",
         u512: "u512",
@@ -65,7 +70,7 @@ cairo_lang_test_utils::test_file_test_with_runner!(
     libfunc_e2e_skip_add_gas,
     "e2e_test_data/libfuncs",
     {
-        withdraw_gas_all: "withdraw_gas_all",
+        gas: "gas",
     },
     SmallE2ETestRunnerSkipAddGas
 );
@@ -77,6 +82,7 @@ cairo_lang_test_utils::test_file_test_with_runner!(
         class_hash: "class_hash",
         contract_address: "contract_address",
         secp256k1: "secp256k1",
+        secp256r1: "secp256r1",
         storage_address: "storage_address",
         syscalls: "syscalls",
     },
@@ -87,12 +93,14 @@ cairo_lang_test_utils::test_file_test_with_runner!(
 struct SmallE2ETestRunner;
 impl TestFileRunner for SmallE2ETestRunner {
     fn run(&mut self, inputs: &OrderedHashMap<String, String>) -> OrderedHashMap<String, String> {
-        let mut locked_db = test_lock(&SHARED_DB);
+        let locked_db = test_lock(&SHARED_DB);
         // Parse code and create semantic model.
-        let test_module =
-            setup_test_module(locked_db.deref_mut(), inputs["cairo"].as_str()).unwrap();
         let db = locked_db.snapshot();
-        DiagnosticsReporter::stderr().ensure(&db).unwrap();
+        let test_module = setup_test_module(&db, inputs["cairo"].as_str()).unwrap();
+        DiagnosticsReporter::stderr()
+            .with_extra_crates(&[test_module.crate_id])
+            .ensure(&db)
+            .unwrap();
 
         // Compile to Sierra.
         let sierra_program = db.get_sierra_program(vec![test_module.crate_id]).unwrap();
@@ -112,6 +120,7 @@ impl TestFileRunner for SmallE2ETestRunner {
         let casm = cairo_lang_sierra_to_casm::compiler::compile(&sierra_program, &metadata, true)
             .unwrap()
             .to_string();
+        drop(locked_db);
 
         OrderedHashMap::from([
             ("casm".into(), casm),
@@ -133,7 +142,10 @@ impl TestFileRunner for SmallE2ETestRunnerSkipAddGas {
         let test_module =
             setup_test_module(locked_db.deref_mut(), inputs["cairo"].as_str()).unwrap();
         let db = locked_db.snapshot();
-        DiagnosticsReporter::stderr().ensure(&db).unwrap();
+        DiagnosticsReporter::stderr()
+            .with_extra_crates(&[test_module.crate_id])
+            .ensure(&db)
+            .unwrap();
 
         // Compile to Sierra.
         let sierra_program = db.get_sierra_program(vec![test_module.crate_id]).unwrap();

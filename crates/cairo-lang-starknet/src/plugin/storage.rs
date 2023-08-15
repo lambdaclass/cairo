@@ -1,11 +1,12 @@
+use cairo_lang_defs::patcher::RewriteNode;
 use cairo_lang_defs::plugin::PluginDiagnostic;
-use cairo_lang_semantic::patcher::RewriteNode;
 use cairo_lang_syntax::node::db::SyntaxGroup;
 use cairo_lang_syntax::node::{ast, Terminal, TypedSyntaxNode};
 use cairo_lang_utils::try_extract_matches;
 use cairo_lang_utils::unordered_hash_map::UnorderedHashMap;
 use indoc::formatdoc;
 
+use super::contract::StarknetModuleKind;
 use crate::contract::starknet_keccak;
 
 /// Generate getters and setters for the variables in the storage struct.
@@ -14,26 +15,41 @@ pub fn handle_storage_struct(
     struct_ast: ast::ItemStruct,
     extra_uses_node: &RewriteNode,
     has_event: bool,
+    starknet_module_kind: StarknetModuleKind,
 ) -> (RewriteNode, Vec<PluginDiagnostic>) {
     let mut members_code = Vec::new();
     let mut members_init_code = Vec::new();
     let mut vars_code = Vec::new();
     let mut diagnostics = vec![];
 
+    let state_struct_name = format!("{}State", starknet_module_kind.to_str_capital());
+    let member_state_name = format!("{}MemberState", starknet_module_kind.to_str_capital());
+    let (generic_arg_str, full_generic_arg_str) =
+        if starknet_module_kind == StarknetModuleKind::Component {
+            ("<TCS>", "::<TCS>")
+        } else {
+            ("", "")
+        };
+    let full_state_struct_name = format!("{state_struct_name}{generic_arg_str}");
+
     for member in struct_ast.members(db).elements(db) {
         let name_node = member.name(db).as_syntax_node();
         let name = member.name(db).text(db);
         members_code.push(RewriteNode::interpolate_patched(
-            "
-        $name$: $name$::Storage,",
+            &format!(
+                "
+        $name$: $name$::{member_state_name},"
+            ),
             UnorderedHashMap::from([(
                 "name".to_string(),
                 RewriteNode::new_trimmed(name_node.clone()),
             )]),
         ));
         members_init_code.push(RewriteNode::interpolate_patched(
-            "
-            $name$: $name$::Storage{},",
+            &format!(
+                "
+            $name$: $name$::{member_state_name}{{}},"
+            ),
             UnorderedHashMap::from([("name".to_string(), RewriteNode::new_trimmed(name_node))]),
         ));
         let address = format!("0x{:x}", starknet_keccak(name.as_bytes()));
@@ -41,7 +57,7 @@ pub fn handle_storage_struct(
         match try_extract_mapping_types(db, &type_ast) {
             Some((key_type_ast, value_type_ast, MappingType::Legacy)) => {
                 vars_code.push(RewriteNode::interpolate_patched(
-                    handle_legacy_mapping_storage_var(&address).as_str(),
+                    handle_legacy_mapping_storage_var(&address, &member_state_name).as_str(),
                     [
                         (
                             "storage_var_name".to_string(),
@@ -68,7 +84,7 @@ pub fn handle_storage_struct(
             }
             None => {
                 vars_code.push(RewriteNode::interpolate_patched(
-                    handle_simple_storage_var(&address).as_str(),
+                    handle_simple_storage_var(&address, &member_state_name).as_str(),
                     [
                         (
                             "storage_var_name".to_string(),
@@ -85,31 +101,48 @@ pub fn handle_storage_struct(
             }
         }
     }
+
+    let unsafe_new_function_name =
+        format!("unsafe_new_{}_state{generic_arg_str}", starknet_module_kind.to_str_lower());
+    let for_testing_function_name =
+        format!("{}_state_for_testing{generic_arg_str}", starknet_module_kind.to_str_lower());
     let empty_event_code =
-        if has_event { "" } else { "#[derive(Drop, starknet::Event)] struct Event {}\n" };
+        if has_event { "" } else { "#[event] #[derive(Drop, starknet::Event)] enum Event {}\n" };
     let storage_code = RewriteNode::interpolate_patched(
         formatdoc!(
             "
             use starknet::event::EventEmitter;
-            #[derive(Copy, Drop)]
-                struct Storage {{$members_code$
+                struct {full_state_struct_name} {{$members_code$
                 }}
+                impl {state_struct_name}Drop{generic_arg_str} of Drop<{full_state_struct_name}> \
+             {{}}
                 #[inline(always)]
-                fn unsafe_new_storage() -> Storage {{
-                    Storage {{$member_init_code$
+                fn {unsafe_new_function_name}() -> {full_state_struct_name} {{
+                    {state_struct_name}{full_generic_arg_str} {{$member_init_code$
                     }}
                 }}
-                
+                #[cfg(test)]
+                #[inline(always)]
+                fn {for_testing_function_name}() -> {full_state_struct_name} {{
+                    {unsafe_new_function_name}()
+                }}
+
+
                 $empty_event_code$
-                impl StorageEventEmitter of EventEmitter<Storage, Event> {{
-                    fn emit(ref self: Storage, event: Event) {{
+                impl {state_struct_name}EventEmitter{generic_arg_str} of \
+             EventEmitter<{full_state_struct_name}, Event> {{
+                    fn emit<S, impl IntoImp: traits::Into<S, Event>>(ref self: \
+             {full_state_struct_name}, event: S) {{
+                        let event: Event = traits::Into::into(event);
                         let mut keys = Default::<array::Array>::default();
-                        let mut values = Default::<array::Array>::default();
-                        starknet::Event::append_keys_and_values(@event, ref keys, ref values);
-                        starknet::syscalls::emit_event_syscall(
-                            array::ArrayTrait::span(@keys),
-                            array::ArrayTrait::span(@values),
-                        ).unwrap_syscall()
+                        let mut data = Default::<array::Array>::default();
+                        starknet::Event::append_keys_and_data(@event, ref keys, ref data);
+                        starknet::SyscallResultTraitImpl::unwrap_syscall(
+                            starknet::syscalls::emit_event_syscall(
+                                array::ArrayTrait::span(@keys),
+                                array::ArrayTrait::span(@data),
+                            )
+                        )
                     }}
                 }}
             $vars_code$
@@ -161,43 +194,44 @@ fn try_extract_mapping_types(
 }
 
 /// Generate getters and setters skeleton for a non-mapping member in the storage struct.
-fn handle_simple_storage_var(address: &str) -> String {
+fn handle_simple_storage_var(address: &str, member_state_name: &str) -> String {
     format!(
         "
-    use $storage_var_name$::InternalStorageTrait as $storage_var_name$StorageTrait;
+    use $storage_var_name$::Internal{member_state_name}Trait as \
+         $storage_var_name${member_state_name}Trait;
     mod $storage_var_name$ {{$extra_uses$
-        use starknet::SyscallResultTrait;
-        use starknet::SyscallResultTraitImpl;
-        use super;
-
         #[derive(Copy, Drop)]
-        struct Storage {{}}
-        trait InternalStorageTrait {{
-            fn address(self: @Storage) -> starknet::StorageBaseAddress;
-            fn read(self: @Storage) -> $type_name$;
-            fn write(ref self: Storage, value: $type_name$);
+        struct {member_state_name} {{}}
+        trait Internal{member_state_name}Trait {{
+            fn address(self: @{member_state_name}) -> starknet::StorageBaseAddress;
+            fn read(self: @{member_state_name}) -> $type_name$;
+            fn write(ref self: {member_state_name}, value: $type_name$);
         }}
 
-        impl InternalStorageImpl of InternalStorageTrait {{
-            fn address(self: @Storage) -> starknet::StorageBaseAddress {{
+        impl Internal{member_state_name}Impl of Internal{member_state_name}Trait {{
+            fn address(self: @{member_state_name}) -> starknet::StorageBaseAddress {{
                 starknet::storage_base_address_const::<{address}>()
             }}
-            fn read(self: @Storage) -> $type_name$ {{
+            fn read(self: @{member_state_name}) -> $type_name$ {{
                 // Only address_domain 0 is currently supported.
                 let address_domain = 0_u32;
-                starknet::StorageAccess::<$type_name$>::read(
-                    address_domain,
-                    self.address(),
-                ).unwrap_syscall()
+                starknet::SyscallResultTraitImpl::unwrap_syscall(
+                    starknet::Store::<$type_name$>::read(
+                        address_domain,
+                        self.address(),
+                    )
+                )
             }}
-            fn write(ref self: Storage, value: $type_name$) {{
+            fn write(ref self: {member_state_name}, value: $type_name$) {{
                 // Only address_domain 0 is currently supported.
                 let address_domain = 0_u32;
-                starknet::StorageAccess::<$type_name$>::write(
-                    address_domain,
-                    self.address(),
-                    value,
-                ).unwrap_syscall()
+                starknet::SyscallResultTraitImpl::unwrap_syscall(
+                    starknet::Store::<$type_name$>::write(
+                        address_domain,
+                        self.address(),
+                        value,
+                    )
+                )
             }}
         }}
     }}"
@@ -205,44 +239,47 @@ fn handle_simple_storage_var(address: &str) -> String {
 }
 
 /// Generate getters and setters skeleton for a non-mapping member in the storage struct.
-fn handle_legacy_mapping_storage_var(address: &str) -> String {
+fn handle_legacy_mapping_storage_var(address: &str, member_state_name: &str) -> String {
     format!(
         "
-    use $storage_var_name$::InternalStorageTrait as $storage_var_name$StorageTrait;
+    use $storage_var_name$::Internal{member_state_name}Trait as \
+         $storage_var_name${member_state_name}Trait;
     mod $storage_var_name$ {{$extra_uses$
-        use starknet::SyscallResultTrait;
-        use starknet::SyscallResultTraitImpl;
-        use super;
-
         #[derive(Copy, Drop)]
-        struct Storage {{}}
-        trait InternalStorageTrait {{
-            fn address(self: @Storage, key: $key_type$) -> starknet::StorageBaseAddress;
-            fn read(self: @Storage, key: $key_type$) -> $value_type$;
-            fn write(ref self: Storage, key: $key_type$, value: $value_type$);
+        struct {member_state_name} {{}}
+        trait Internal{member_state_name}Trait {{
+            fn address(self: @{member_state_name}, key: $key_type$) -> \
+         starknet::StorageBaseAddress;
+            fn read(self: @{member_state_name}, key: $key_type$) -> $value_type$;
+            fn write(ref self: {member_state_name}, key: $key_type$, value: $value_type$);
         }}
 
-        impl InternalStorageImpl of InternalStorageTrait {{
-            fn address(self: @Storage, key: $key_type$) -> starknet::StorageBaseAddress {{
+        impl Internal{member_state_name}Impl of Internal{member_state_name}Trait {{
+            fn address(self: @{member_state_name}, key: $key_type$) -> \
+         starknet::StorageBaseAddress {{
                 starknet::storage_base_address_from_felt252(
                     hash::LegacyHash::<$key_type$>::hash({address}, key))
             }}
-            fn read(self: @Storage, key: $key_type$) -> $value_type$ {{
+            fn read(self: @{member_state_name}, key: $key_type$) -> $value_type$ {{
                 // Only address_domain 0 is currently supported.
                 let address_domain = 0_u32;
-                starknet::StorageAccess::<$value_type$>::read(
-                    address_domain,
-                    self.address(key),
-                ).unwrap_syscall()
+                starknet::SyscallResultTraitImpl::unwrap_syscall(
+                    starknet::Store::<$value_type$>::read(
+                        address_domain,
+                        self.address(key),
+                    )
+                )
             }}
-            fn write(ref self: Storage, key: $key_type$, value: $value_type$) {{
+            fn write(ref self: {member_state_name}, key: $key_type$, value: $value_type$) {{
                 // Only address_domain 0 is currently supported.
                 let address_domain = 0_u32;
-                starknet::StorageAccess::<$value_type$>::write(
-                    address_domain,
-                    self.address(key),
-                    value,
-                ).unwrap_syscall()
+                starknet::SyscallResultTraitImpl::unwrap_syscall(
+                    starknet::Store::<$value_type$>::write(
+                        address_domain,
+                        self.address(key),
+                        value,
+                    )
+                )
             }}
         }}
     }}"

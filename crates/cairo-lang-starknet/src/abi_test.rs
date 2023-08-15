@@ -1,3 +1,6 @@
+use std::sync::Arc;
+
+use cairo_lang_compiler::db::RootDatabase;
 use cairo_lang_defs::ids::ModuleItemId;
 use cairo_lang_semantic::db::SemanticGroup;
 use cairo_lang_semantic::test_utils::{setup_test_module, SemanticDatabaseForTesting};
@@ -6,12 +9,13 @@ use indoc::indoc;
 use pretty_assertions::assert_eq;
 
 use crate::abi::AbiBuilder;
+use crate::plugin::StarkNetPlugin;
 
 #[test]
 fn test_abi() {
-    let mut db_val = SemanticDatabaseForTesting::default();
+    let db_val = SemanticDatabaseForTesting::default();
     let module_id = setup_test_module(
-        &mut db_val,
+        &db_val,
         indoc! {"
             struct MyStruct<T> {
               a: T,
@@ -23,20 +27,17 @@ fn test_abi() {
               b: MyStruct::<S>
             }
 
-            trait MyAbi {
-                fn foo(a: felt252, b: u128) -> Option::<()>;
+            trait MyAbi<T> {
+                fn foo(ref self: T, a: felt252, b: u128) -> Option::<()>;
 
                 #[external]
-                fn foo_external(a: felt252, b: u128) -> MyStruct::<u256>;
-
-                #[view]
-                fn foo_view(a: felt252, b: u128) -> MyEnum::<u128>;
+                fn foo_external(ref self: T, a: felt252, b: u128) -> MyStruct::<u256>;
 
                 #[external]
-                fn empty();
+                fn foo_view(self: @T, a: felt252, b: u128) -> MyEnum::<u128>;
 
-                #[event]
-                fn foo_event(a: felt252, b: u128);
+                #[external]
+                fn empty(ref self: T);
             }
         "},
     )
@@ -48,12 +49,26 @@ fn test_abi() {
         db.module_item_by_name(module_id, "MyAbi".into()).unwrap().unwrap(),
         ModuleItemId::Trait
     );
-    let abi = AbiBuilder::from_trait(db, trait_id).unwrap();
+    let abi = AbiBuilder::trait_as_interface_abi(db, trait_id).unwrap();
     let actual_serialization = serde_json::to_string_pretty(&abi).unwrap();
     assert_eq!(
         actual_serialization,
         indoc! {
         r#"[
+            {
+              "type": "enum",
+              "name": "core::option::Option::<()>",
+              "variants": [
+                {
+                  "name": "Some",
+                  "type": "()"
+                },
+                {
+                  "name": "None",
+                  "type": "()"
+                }
+              ]
+            },
             {
               "type": "function",
               "name": "foo",
@@ -73,6 +88,20 @@ fn test_abi() {
                 }
               ],
               "state_mutability": "external"
+            },
+            {
+              "type": "struct",
+              "name": "core::integer::u256",
+              "members": [
+                {
+                  "name": "low",
+                  "type": "core::integer::u128"
+                },
+                {
+                  "name": "high",
+                  "type": "core::integer::u128"
+                }
+              ]
             },
             {
               "type": "struct",
@@ -107,6 +136,20 @@ fn test_abi() {
                 }
               ],
               "state_mutability": "external"
+            },
+            {
+              "type": "struct",
+              "name": "test::MyStruct::<core::integer::u128>",
+              "members": [
+                {
+                  "name": "a",
+                  "type": "core::integer::u128"
+                },
+                {
+                  "name": "b",
+                  "type": "core::felt252"
+                }
+              ]
             },
             {
               "type": "enum",
@@ -148,21 +191,48 @@ fn test_abi() {
               "inputs": [],
               "outputs": [],
               "state_mutability": "external"
-            },
-            {
-              "type": "event",
-              "name": "foo_event",
-              "inputs": [
-                {
-                  "name": "a",
-                  "type": "core::felt252"
-                },
-                {
-                  "name": "b",
-                  "type": "core::integer::u128"
-                }
-              ]
             }
           ]"#}
     );
+}
+
+#[test]
+fn test_abi_failure() {
+    let db = &mut RootDatabase::builder()
+        .detect_corelib()
+        .with_macro_plugin(Arc::new(StarkNetPlugin::default()))
+        .build()
+        .unwrap();
+    let module_id = setup_test_module(
+        db,
+        indoc! {"
+          #[derive(Drop, starknet::Event)]
+          struct A {
+          }
+
+          #[starknet::contract]
+          mod test_contract {
+              use super::A;
+
+              #[storage]
+              struct Storage {
+              }
+
+              #[event]
+              #[derive(Drop, starknet::Event)]
+              enum Event {
+                  A: A
+              }
+          }
+        "},
+    )
+    .unwrap()
+    .module_id;
+
+    let submodule_id = extract_matches!(
+        db.module_item_by_name(module_id, "test_contract".into()).unwrap().unwrap(),
+        ModuleItemId::Submodule
+    );
+    let err = AbiBuilder::submodule_as_contract_abi(db, submodule_id).unwrap_err();
+    assert_eq!(err.to_string(), "Event type must derive `starknet::Event`.");
 }

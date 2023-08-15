@@ -9,7 +9,7 @@ fn foo(a: u8, b: u8) -> Result::<u8, u8> {
 }
 
 //! > casm
-%{ memory[ap + 0] = memory[fp + -4] + memory[fp + -3] < 256 %}
+%{ memory[ap + 0] = (memory[fp + -4] + memory[fp + -3]) % PRIME < 256 %}
 jmp rel 8 if [ap + 0] != 0, ap++;
 [ap + 0] = [fp + -4] + [fp + -3], ap++;
 [ap + -1] = [ap + 0] + 256, ap++;
@@ -31,9 +31,9 @@ ret;
 test::foo: OrderedHashMap({Const: 870})
 
 //! > sierra_code
-type RangeCheck = RangeCheck;
-type u8 = u8;
-type core::result::Result::<core::integer::u8, core::integer::u8> = Enum<ut@core::result::Result::<core::integer::u8, core::integer::u8>, u8, u8>;
+type RangeCheck = RangeCheck [storable: true, drop: false, dup: false, zero_sized: false];
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type core::result::Result::<core::integer::u8, core::integer::u8> = Enum<ut@core::result::Result::<core::integer::u8, core::integer::u8>, u8, u8> [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_overflowing_add = u8_overflowing_add;
 libfunc branch_align = branch_align;
@@ -45,19 +45,19 @@ libfunc enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 
 libfunc rename<RangeCheck> = rename<RangeCheck>;
 libfunc rename<core::result::Result::<core::integer::u8, core::integer::u8>> = rename<core::result::Result::<core::integer::u8, core::integer::u8>>;
 
-u8_overflowing_add([0], [1], [2]) { fallthrough([3], [4]) 6([5], [6]) };
-branch_align() -> ();
-enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 0>([4]) -> ([7]);
-store_temp<RangeCheck>([3]) -> ([8]);
-store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([7]) -> ([9]);
-jump() { 10() };
-branch_align() -> ();
-enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 1>([6]) -> ([10]);
-store_temp<RangeCheck>([5]) -> ([8]);
-store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([10]) -> ([9]);
-rename<RangeCheck>([8]) -> ([11]);
-rename<core::result::Result::<core::integer::u8, core::integer::u8>>([9]) -> ([12]);
-return([11], [12]);
+u8_overflowing_add([0], [1], [2]) { fallthrough([3], [4]) 6([5], [6]) }; // 0
+branch_align() -> (); // 1
+enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 0>([4]) -> ([7]); // 2
+store_temp<RangeCheck>([3]) -> ([8]); // 3
+store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([7]) -> ([9]); // 4
+jump() { 10() }; // 5
+branch_align() -> (); // 6
+enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 1>([6]) -> ([10]); // 7
+store_temp<RangeCheck>([5]) -> ([8]); // 8
+store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([10]) -> ([9]); // 9
+rename<RangeCheck>([8]) -> ([11]); // 10
+rename<core::result::Result::<core::integer::u8, core::integer::u8>>([9]) -> ([12]); // 11
+return([11], [12]); // 12
 
 test::foo@0([0]: RangeCheck, [1]: u8, [2]: u8) -> (RangeCheck, core::result::Result::<core::integer::u8, core::integer::u8>);
 
@@ -75,7 +75,7 @@ fn foo(a: u8, b: u8) -> Result::<u8, u8> {
 
 //! > casm
 [fp + -4] = [ap + 1] + [fp + -3], ap++;
-%{ memory[ap + -1] = memory[fp + -3] <= memory[fp + -4] %}
+%{ memory[ap + -1] = memory[ap + 0] < 256 %}
 jmp rel 7 if [ap + -1] != 0, ap++;
 [ap + 0] = [ap + -1] + 340282366920938463463374607431768211456, ap++;
 [ap + -1] = [[fp + -5] + 0];
@@ -95,9 +95,9 @@ ret;
 test::foo: OrderedHashMap({Const: 880})
 
 //! > sierra_code
-type RangeCheck = RangeCheck;
-type u8 = u8;
-type core::result::Result::<core::integer::u8, core::integer::u8> = Enum<ut@core::result::Result::<core::integer::u8, core::integer::u8>, u8, u8>;
+type RangeCheck = RangeCheck [storable: true, drop: false, dup: false, zero_sized: false];
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type core::result::Result::<core::integer::u8, core::integer::u8> = Enum<ut@core::result::Result::<core::integer::u8, core::integer::u8>, u8, u8> [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_overflowing_sub = u8_overflowing_sub;
 libfunc branch_align = branch_align;
@@ -109,19 +109,19 @@ libfunc enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 
 libfunc rename<RangeCheck> = rename<RangeCheck>;
 libfunc rename<core::result::Result::<core::integer::u8, core::integer::u8>> = rename<core::result::Result::<core::integer::u8, core::integer::u8>>;
 
-u8_overflowing_sub([0], [1], [2]) { fallthrough([3], [4]) 6([5], [6]) };
-branch_align() -> ();
-enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 0>([4]) -> ([7]);
-store_temp<RangeCheck>([3]) -> ([8]);
-store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([7]) -> ([9]);
-jump() { 10() };
-branch_align() -> ();
-enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 1>([6]) -> ([10]);
-store_temp<RangeCheck>([5]) -> ([8]);
-store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([10]) -> ([9]);
-rename<RangeCheck>([8]) -> ([11]);
-rename<core::result::Result::<core::integer::u8, core::integer::u8>>([9]) -> ([12]);
-return([11], [12]);
+u8_overflowing_sub([0], [1], [2]) { fallthrough([3], [4]) 6([5], [6]) }; // 0
+branch_align() -> (); // 1
+enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 0>([4]) -> ([7]); // 2
+store_temp<RangeCheck>([3]) -> ([8]); // 3
+store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([7]) -> ([9]); // 4
+jump() { 10() }; // 5
+branch_align() -> (); // 6
+enum_init<core::result::Result::<core::integer::u8, core::integer::u8>, 1>([6]) -> ([10]); // 7
+store_temp<RangeCheck>([5]) -> ([8]); // 8
+store_temp<core::result::Result::<core::integer::u8, core::integer::u8>>([10]) -> ([9]); // 9
+rename<RangeCheck>([8]) -> ([11]); // 10
+rename<core::result::Result::<core::integer::u8, core::integer::u8>>([9]) -> ([12]); // 11
+return([11], [12]); // 12
 
 test::foo@0([0]: RangeCheck, [1]: u8, [2]: u8) -> (RangeCheck, core::result::Result::<core::integer::u8, core::integer::u8>);
 
@@ -150,9 +150,9 @@ ret;
 test::foo: OrderedHashMap({Const: 400})
 
 //! > sierra_code
-type u8 = u8;
-type Unit = Struct<ut@Tuple>;
-type core::bool = Enum<ut@core::bool, Unit, Unit>;
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type Unit = Struct<ut@Tuple> [storable: true, drop: true, dup: true, zero_sized: true];
+type core::bool = Enum<ut@core::bool, Unit, Unit> [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_eq = u8_eq;
 libfunc branch_align = branch_align;
@@ -163,18 +163,18 @@ libfunc jump = jump;
 libfunc enum_init<core::bool, 1> = enum_init<core::bool, 1>;
 libfunc rename<core::bool> = rename<core::bool>;
 
-u8_eq([0], [1]) { fallthrough() 6() };
-branch_align() -> ();
-struct_construct<Unit>() -> ([2]);
-enum_init<core::bool, 0>([2]) -> ([3]);
-store_temp<core::bool>([3]) -> ([4]);
-jump() { 10() };
-branch_align() -> ();
-struct_construct<Unit>() -> ([5]);
-enum_init<core::bool, 1>([5]) -> ([6]);
-store_temp<core::bool>([6]) -> ([4]);
-rename<core::bool>([4]) -> ([7]);
-return([7]);
+u8_eq([0], [1]) { fallthrough() 6() }; // 0
+branch_align() -> (); // 1
+struct_construct<Unit>() -> ([2]); // 2
+enum_init<core::bool, 0>([2]) -> ([3]); // 3
+store_temp<core::bool>([3]) -> ([4]); // 4
+jump() { 10() }; // 5
+branch_align() -> (); // 6
+struct_construct<Unit>() -> ([5]); // 7
+enum_init<core::bool, 1>([5]) -> ([6]); // 8
+store_temp<core::bool>([6]) -> ([4]); // 9
+rename<core::bool>([4]) -> ([7]); // 10
+return([7]); // 11
 
 test::foo@0([0]: u8, [1]: u8) -> (core::bool);
 
@@ -204,9 +204,9 @@ ret;
 test::foo: OrderedHashMap({Const: 500})
 
 //! > sierra_code
-type u8 = u8;
-type Unit = Struct<ut@Tuple>;
-type core::bool = Enum<ut@core::bool, Unit, Unit>;
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type Unit = Struct<ut@Tuple> [storable: true, drop: true, dup: true, zero_sized: true];
+type core::bool = Enum<ut@core::bool, Unit, Unit> [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_const<11> = u8_const<11>;
 libfunc u8_const<12> = u8_const<12>;
@@ -220,21 +220,21 @@ libfunc jump = jump;
 libfunc enum_init<core::bool, 1> = enum_init<core::bool, 1>;
 libfunc rename<core::bool> = rename<core::bool>;
 
-u8_const<11>() -> ([0]);
-u8_const<12>() -> ([1]);
-store_temp<u8>([0]) -> ([0]);
-u8_eq([0], [1]) { fallthrough() 9() };
-branch_align() -> ();
-struct_construct<Unit>() -> ([2]);
-enum_init<core::bool, 0>([2]) -> ([3]);
-store_temp<core::bool>([3]) -> ([4]);
-jump() { 13() };
-branch_align() -> ();
-struct_construct<Unit>() -> ([5]);
-enum_init<core::bool, 1>([5]) -> ([6]);
-store_temp<core::bool>([6]) -> ([4]);
-rename<core::bool>([4]) -> ([7]);
-return([7]);
+u8_const<11>() -> ([0]); // 0
+u8_const<12>() -> ([1]); // 1
+store_temp<u8>([0]) -> ([0]); // 2
+u8_eq([0], [1]) { fallthrough() 9() }; // 3
+branch_align() -> (); // 4
+struct_construct<Unit>() -> ([2]); // 5
+enum_init<core::bool, 0>([2]) -> ([3]); // 6
+store_temp<core::bool>([3]) -> ([4]); // 7
+jump() { 13() }; // 8
+branch_align() -> (); // 9
+struct_construct<Unit>() -> ([5]); // 10
+enum_init<core::bool, 1>([5]) -> ([6]); // 11
+store_temp<core::bool>([6]) -> ([4]); // 12
+rename<core::bool>([4]) -> ([7]); // 13
+return([7]); // 14
 
 test::foo@0() -> (core::bool);
 
@@ -287,11 +287,11 @@ ret;
 test::foo: OrderedHashMap({Const: 1510})
 
 //! > sierra_code
-type RangeCheck = RangeCheck;
-type felt252 = felt252;
-type u8 = u8;
-type Unit = Struct<ut@Tuple>;
-type core::option::Option::<core::integer::u8> = Enum<ut@core::option::Option::<core::integer::u8>, u8, Unit>;
+type RangeCheck = RangeCheck [storable: true, drop: false, dup: false, zero_sized: false];
+type Unit = Struct<ut@Tuple> [storable: true, drop: true, dup: true, zero_sized: true];
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type core::option::Option::<core::integer::u8> = Enum<ut@core::option::Option::<core::integer::u8>, u8, Unit> [storable: true, drop: true, dup: true, zero_sized: false];
+type felt252 = felt252 [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_try_from_felt252 = u8_try_from_felt252;
 libfunc branch_align = branch_align;
@@ -304,20 +304,20 @@ libfunc enum_init<core::option::Option::<core::integer::u8>, 1> = enum_init<core
 libfunc rename<RangeCheck> = rename<RangeCheck>;
 libfunc rename<core::option::Option::<core::integer::u8>> = rename<core::option::Option::<core::integer::u8>>;
 
-u8_try_from_felt252([0], [1]) { fallthrough([2], [3]) 6([4]) };
-branch_align() -> ();
-enum_init<core::option::Option::<core::integer::u8>, 0>([3]) -> ([5]);
-store_temp<RangeCheck>([2]) -> ([6]);
-store_temp<core::option::Option::<core::integer::u8>>([5]) -> ([7]);
-jump() { 11() };
-branch_align() -> ();
-struct_construct<Unit>() -> ([8]);
-enum_init<core::option::Option::<core::integer::u8>, 1>([8]) -> ([9]);
-store_temp<RangeCheck>([4]) -> ([6]);
-store_temp<core::option::Option::<core::integer::u8>>([9]) -> ([7]);
-rename<RangeCheck>([6]) -> ([10]);
-rename<core::option::Option::<core::integer::u8>>([7]) -> ([11]);
-return([10], [11]);
+u8_try_from_felt252([0], [1]) { fallthrough([2], [3]) 6([4]) }; // 0
+branch_align() -> (); // 1
+enum_init<core::option::Option::<core::integer::u8>, 0>([3]) -> ([5]); // 2
+store_temp<RangeCheck>([2]) -> ([6]); // 3
+store_temp<core::option::Option::<core::integer::u8>>([5]) -> ([7]); // 4
+jump() { 11() }; // 5
+branch_align() -> (); // 6
+struct_construct<Unit>() -> ([8]); // 7
+enum_init<core::option::Option::<core::integer::u8>, 1>([8]) -> ([9]); // 8
+store_temp<RangeCheck>([4]) -> ([6]); // 9
+store_temp<core::option::Option::<core::integer::u8>>([9]) -> ([7]); // 10
+rename<RangeCheck>([6]) -> ([10]); // 11
+rename<core::option::Option::<core::integer::u8>>([7]) -> ([11]); // 12
+return([10], [11]); // 13
 
 test::foo@0([0]: RangeCheck, [1]: felt252) -> (RangeCheck, core::option::Option::<core::integer::u8>);
 
@@ -330,11 +330,9 @@ SmallE2ETestRunner
 
 //! > cairo
 use zeroable::IsZeroResult;
-use zeroable::NonZeroIntoImpl;
-use traits::Into;
 fn foo(a: u8) -> u8 {
     match integer::u8_is_zero(a) {
-        IsZeroResult::Zero(()) => 123_u8,
+        IsZeroResult::Zero => 123_u8,
         IsZeroResult::NonZero(x) => x.into(),
     }
 }
@@ -350,8 +348,8 @@ ret;
 test::foo: OrderedHashMap({Const: 300})
 
 //! > sierra_code
-type u8 = u8;
-type NonZero<u8> = NonZero<u8>;
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type NonZero<u8> = NonZero<u8> [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_is_zero = u8_is_zero;
 libfunc branch_align = branch_align;
@@ -361,16 +359,16 @@ libfunc jump = jump;
 libfunc unwrap_non_zero<u8> = unwrap_non_zero<u8>;
 libfunc rename<u8> = rename<u8>;
 
-u8_is_zero([0]) { fallthrough() 5([1]) };
-branch_align() -> ();
-u8_const<123>() -> ([2]);
-store_temp<u8>([2]) -> ([3]);
-jump() { 8() };
-branch_align() -> ();
-unwrap_non_zero<u8>([1]) -> ([4]);
-store_temp<u8>([4]) -> ([3]);
-rename<u8>([3]) -> ([5]);
-return([5]);
+u8_is_zero([0]) { fallthrough() 5([1]) }; // 0
+branch_align() -> (); // 1
+u8_const<123>() -> ([2]); // 2
+store_temp<u8>([2]) -> ([3]); // 3
+jump() { 8() }; // 4
+branch_align() -> (); // 5
+unwrap_non_zero<u8>([1]) -> ([4]); // 6
+store_temp<u8>([4]) -> ([3]); // 7
+rename<u8>([3]) -> ([5]); // 8
+return([5]); // 9
 
 test::foo@0([0]: u8) -> (u8);
 
@@ -404,21 +402,21 @@ ret;
 test::foo: OrderedHashMap({Const: 1210})
 
 //! > sierra_code
-type RangeCheck = RangeCheck;
-type u8 = u8;
-type NonZero<u8> = NonZero<u8>;
-type Tuple<u8, u8> = Struct<ut@Tuple, u8, u8>;
+type RangeCheck = RangeCheck [storable: true, drop: false, dup: false, zero_sized: false];
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
+type Tuple<u8, u8> = Struct<ut@Tuple, u8, u8> [storable: true, drop: true, dup: true, zero_sized: false];
+type NonZero<u8> = NonZero<u8> [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_safe_divmod = u8_safe_divmod;
 libfunc struct_construct<Tuple<u8, u8>> = struct_construct<Tuple<u8, u8>>;
 libfunc store_temp<RangeCheck> = store_temp<RangeCheck>;
 libfunc store_temp<Tuple<u8, u8>> = store_temp<Tuple<u8, u8>>;
 
-u8_safe_divmod([0], [1], [2]) -> ([3], [4], [5]);
-struct_construct<Tuple<u8, u8>>([4], [5]) -> ([6]);
-store_temp<RangeCheck>([3]) -> ([7]);
-store_temp<Tuple<u8, u8>>([6]) -> ([8]);
-return([7], [8]);
+u8_safe_divmod([0], [1], [2]) -> ([3], [4], [5]); // 0
+struct_construct<Tuple<u8, u8>>([4], [5]) -> ([6]); // 1
+store_temp<RangeCheck>([3]) -> ([7]); // 2
+store_temp<Tuple<u8, u8>>([6]) -> ([8]); // 3
+return([7], [8]); // 4
 
 test::foo@0([0]: RangeCheck, [1]: u8, [2]: NonZero<u8>) -> (RangeCheck, Tuple<u8, u8>);
 
@@ -456,16 +454,16 @@ ret;
 test::foo: OrderedHashMap({Const: 1380})
 
 //! > sierra_code
-type RangeCheck = RangeCheck;
-type u8 = u8;
+type RangeCheck = RangeCheck [storable: true, drop: false, dup: false, zero_sized: false];
+type u8 = u8 [storable: true, drop: true, dup: true, zero_sized: false];
 
 libfunc u8_sqrt = u8_sqrt;
 libfunc store_temp<RangeCheck> = store_temp<RangeCheck>;
 libfunc store_temp<u8> = store_temp<u8>;
 
-u8_sqrt([0], [1]) -> ([2], [3]);
-store_temp<RangeCheck>([2]) -> ([4]);
-store_temp<u8>([3]) -> ([5]);
-return([4], [5]);
+u8_sqrt([0], [1]) -> ([2], [3]); // 0
+store_temp<RangeCheck>([2]) -> ([4]); // 1
+store_temp<u8>([3]) -> ([5]); // 2
+return([4], [5]); // 3
 
 test::foo@0([0]: RangeCheck, [1]: u8) -> (RangeCheck, u8);

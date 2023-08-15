@@ -24,8 +24,7 @@ use crate::allowed_libfuncs::{
 };
 use crate::compiler_version::{self};
 use crate::contract::{
-    find_contracts, get_abi, get_module_functions, get_selector_and_sierra_function,
-    ContractDeclaration,
+    find_contracts, get_module_functions, get_selector_and_sierra_function, ContractDeclaration,
 };
 use crate::felt252_serde::sierra_to_felt252s;
 use crate::plugin::consts::{CONSTRUCTOR_MODULE, EXTERNAL_MODULE, L1_HANDLER_MODULE};
@@ -83,7 +82,7 @@ pub fn compile_path(
 ) -> Result<ContractClass> {
     let mut db = RootDatabase::builder()
         .detect_corelib()
-        .with_semantic_plugin(Arc::new(StarkNetPlugin::default()))
+        .with_macro_plugin(Arc::new(StarkNetPlugin::default()))
         .build()?;
 
     let main_crate_ids = setup_project(&mut db, Path::new(&path))?;
@@ -94,34 +93,33 @@ pub fn compile_path(
 /// Runs StarkNet contract compiler on the specified contract.
 /// If no contract was specified, verify that there is only one.
 /// Otherwise, return an error.
-pub(crate) fn compile_contract_in_prepared_db(
+pub fn compile_contract_in_prepared_db(
     db: &RootDatabase,
     contract_path: Option<&str>,
     main_crate_ids: Vec<CrateId>,
-    compiler_config: CompilerConfig<'_>,
+    mut compiler_config: CompilerConfig<'_>,
 ) -> Result<ContractClass> {
-    let contracts = find_contracts(db, &main_crate_ids);
+    let mut contracts = find_contracts(db, &main_crate_ids);
+
     // TODO(ilya): Add contract names.
-    let contract = if let Some(contract_path) = contract_path {
-        contracts
-            .iter()
-            .find(|contract| contract.submodule_id.full_path(db) == contract_path)
-            .context("Contract not found.")?
-    } else {
-        match contracts.len() {
-            0 => anyhow::bail!("Contract not found."),
-            1 => &contracts[0],
-            _ => {
-                let contract_names = contracts
-                    .iter()
-                    .map(|contract| contract.submodule_id.full_path(db))
-                    .join("\n  ");
-                anyhow::bail!(
-                    "More than one contract found in the main crate: \n  {}\nUse --contract-path \
-                     to specify which to compile.",
-                    contract_names
-                );
-            }
+    if let Some(contract_path) = contract_path {
+        contracts.retain(|contract| contract.submodule_id.full_path(db) == contract_path);
+    };
+    let contract = match contracts.len() {
+        0 => {
+            // Report diagnostics as they might reveal the reason why no contract was found.
+            compiler_config.diagnostics_reporter.ensure(db)?;
+            anyhow::bail!("Contract not found.");
+        }
+        1 => &contracts[0],
+        _ => {
+            let contract_names =
+                contracts.iter().map(|contract| contract.submodule_id.full_path(db)).join("\n  ");
+            anyhow::bail!(
+                "More than one contract found in the main crate: \n  {}\nUse --contract-path to \
+                 specify which to compile.",
+                contract_names
+            );
         }
     };
 
@@ -184,7 +182,7 @@ fn compile_contract_with_prepared_and_checked_db(
     let entry_points_by_type = ContractEntryPoints {
         external: get_entry_points(db, &external, &replacer)?,
         l1_handler: get_entry_points(db, &l1_handler, &replacer)?,
-        /// TODO(orizi): Validate there is at most one constructor.
+        // Later generation of ABI verifies that there is up to one constructor.
         constructor: get_entry_points(db, &constructor, &replacer)?,
     };
     let contract_class = ContractClass {
@@ -198,7 +196,10 @@ fn compile_contract_with_prepared_and_checked_db(
         )),
         contract_class_version: DEFAULT_CONTRACT_CLASS_VERSION.to_string(),
         entry_points_by_type,
-        abi: Some(AbiBuilder::from_trait(db, get_abi(db, contract)?).with_context(|| "ABI error")?),
+        abi: Some(
+            AbiBuilder::submodule_as_contract_abi(db, contract.submodule_id)
+                .with_context(|| "Could not create ABI from contract submodule")?,
+        ),
     };
     Ok(contract_class)
 }
@@ -215,15 +216,18 @@ pub fn extract_semantic_entrypoints(
     contract: &ContractDeclaration,
 ) -> core::result::Result<SemanticEntryPoints, anyhow::Error> {
     let external: Vec<_> = get_module_functions(db.upcast(), contract, EXTERNAL_MODULE)?
-        .into_iter()
+        .iter()
+        .copied()
         .flat_map(|f| ConcreteFunctionWithBodyId::from_no_generics_free(db.upcast(), f))
         .collect();
     let l1_handler: Vec<_> = get_module_functions(db.upcast(), contract, L1_HANDLER_MODULE)?
-        .into_iter()
+        .iter()
+        .copied()
         .flat_map(|f| ConcreteFunctionWithBodyId::from_no_generics_free(db.upcast(), f))
         .collect();
     let constructor: Vec<_> = get_module_functions(db.upcast(), contract, CONSTRUCTOR_MODULE)?
-        .into_iter()
+        .iter()
+        .copied()
         .flat_map(|f| ConcreteFunctionWithBodyId::from_no_generics_free(db.upcast(), f))
         .collect();
     if constructor.len() > 1 {

@@ -13,43 +13,41 @@ jobs:
     strategy:
       matrix:
         cmd:
-          - nextest run -p cairo-lang-casm
-          - nextest run -p cairo-lang-compiler
-          - nextest run -p cairo-lang-debug
-          - nextest run -p cairo-lang-defs
-          - nextest run -p cairo-lang-diagnostics
-          - nextest run -p cairo-lang-eq-solver
-          - nextest run -p cairo-lang-filesystem
-          - nextest run -p cairo-lang-formatter
-          - nextest run -p cairo-lang-language-server
-          - nextest run -p cairo-lang-lowering
-          - nextest run -p cairo-lang-parser
-          - nextest run -p cairo-lang-plugins
-          - nextest run -p cairo-lang-proc-macros
-          - nextest run -p cairo-lang-project
-          - nextest run -p cairo-lang-runner
-          - nextest run -p cairo-lang-semantic
-          - nextest run -p cairo-lang-sierra
-          - nextest run -p cairo-lang-sierra-ap-change
-          - nextest run -p cairo-lang-sierra-gas
-          - nextest run -p cairo-lang-sierra-generator
-          - nextest run -p cairo-lang-sierra-to-casm
-          - test run -p cairo-lang-starknet
-          - nextest run -p cairo-lang-syntax
-          - nextest run -p cairo-lang-syntax-codegen
-          - nextest run -p cairo-lang-test-runner
-          - nextest run -p cairo-lang-test-utils
-          - nextest run -p cairo-lang-utils
+          - test -p cairo-lang-casm
+          - test -p cairo-lang-compiler
+          - test -p cairo-lang-debug
+          - test -p cairo-lang-defs
+          - test -p cairo-lang-diagnostics
+          - test -p cairo-lang-eq-solver
+          - test -p cairo-lang-filesystem
+          - test -p cairo-lang-formatter
+          - test -p cairo-lang-language-server
+          - test -p cairo-lang-lowering
+          - test -p cairo-lang-parser
+          - test -p cairo-lang-plugins
+          - test -p cairo-lang-proc-macros
+          - test -p cairo-lang-project
+          - test -p cairo-lang-runner
+          - test -p cairo-lang-semantic
+          - test -p cairo-lang-sierra
+          - test -p cairo-lang-sierra-ap-change
+          - test -p cairo-lang-sierra-gas
+          - test -p cairo-lang-sierra-generator
+          - test -p cairo-lang-sierra-to-casm
+          - test -p cairo-lang-sierra-type-size
+          - test -p cairo-lang-starknet
+          - test -p cairo-lang-syntax
+          - test -p cairo-lang-syntax-codegen
+          - test -p cairo-lang-test-runner
+          - test -p cairo-lang-test-utils
+          - test -p cairo-lang-utils
           - test -p tests
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
         with:
           components: rustfmt
-          toolchain: nightly-2022-11-03
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+          toolchain: nightly-2023-07-05
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install nextest
@@ -57,6 +55,7 @@ jobs:
       - run: |
           cargo ${{ matrix.cmd }}
   test:
+    if: ${{ always() }}
     needs: parallel-tests
     runs-on: ubuntu-latest
     steps:
@@ -67,12 +66,11 @@ jobs:
   rustfmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
         with:
-          profile: minimal
           components: rustfmt
-          toolchain: nightly-2022-11-03
+          toolchain: nightly-2023-07-05
       - uses: Swatinem/rust-cache@v2
       - run: scripts/rust_fmt.sh --check
 
@@ -80,11 +78,8 @@ jobs:
   cairofmt:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: scripts/cairo_fmt.sh --check
 
@@ -92,11 +87,8 @@ jobs:
   cairotest:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: scripts/cairo_test.sh
       - run: scripts/starknet_test.sh
@@ -105,28 +97,26 @@ jobs:
   udeps:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@master
         name: "Rust Toolchain Setup"
         with:
-          profile: minimal
-          toolchain: nightly-2022-11-03
+          toolchain: nightly-2023-07-05
       - uses: Swatinem/rust-cache@v2
       - name: "Download and run cargo-udeps"
         run: |
           wget -O - -c https://github.com/est31/cargo-udeps/releases/download/v0.1.35/cargo-udeps-v0.1.35-x86_64-unknown-linux-gnu.tar.gz | tar -xz
           cargo-udeps-*/cargo-udeps udeps
         env:
-          RUSTUP_TOOLCHAIN: nightly-2022-11-03
+          RUSTUP_TOOLCHAIN: nightly-2023-07-05
 
   clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-          toolchain: stable
       - uses: Swatinem/rust-cache@v2
       - run: >
           scripts/clippy.sh
@@ -134,10 +124,17 @@ jobs:
   docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
-      - uses: actions-rs/toolchain@v1
-        with:
-          toolchain: stable
+      - uses: actions/checkout@v3
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: >
           scripts/docs.sh
+
+  sierra-updated-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: '0'
+      - run: >
+          scripts/sierra_update_check.sh origin/$GITHUB_BASE_REF origin/$GITHUB_HEAD_REF

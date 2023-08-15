@@ -1,13 +1,17 @@
 use std::sync::Arc;
 
-use cairo_lang_defs::ids::{ConstantId, LanguageElementId};
+use cairo_lang_defs::ids::{ConstantId, LanguageElementId, LookupItemId, ModuleItemId};
 use cairo_lang_diagnostics::{Diagnostics, Maybe, ToMaybe};
 use cairo_lang_proc_macros::{DebugWithDb, SemanticObject};
 use cairo_lang_syntax::node::TypedSyntaxNode;
 
+use crate::corelib::validate_literal;
 use crate::db::SemanticGroup;
 use crate::diagnostic::SemanticDiagnostics;
 use crate::expr::compute::{compute_expr_semantic, ComputationContext, Environment};
+use crate::expr::inference::canonic::ResultNoErrEx;
+use crate::expr::inference::conform::InferenceConform;
+use crate::expr::inference::InferenceId;
 use crate::resolve::{Resolver, ResolverData};
 use crate::substitution::SemanticRewriter;
 use crate::types::resolve_type;
@@ -30,7 +34,7 @@ pub struct Constant {
 #[debug_db(dyn SemanticGroup + 'static)]
 pub struct ConstantData {
     diagnostics: Diagnostics<SemanticDiagnostic>,
-    constant: Constant,
+    constant: Maybe<Constant>,
     resolver_data: Arc<ResolverData>,
 }
 
@@ -40,7 +44,7 @@ pub fn priv_constant_semantic_data(
     const_id: ConstantId,
 ) -> Maybe<ConstantData> {
     let module_file_id = const_id.module_file_id(db.upcast());
-    let mut diagnostics = SemanticDiagnostics::new(module_file_id);
+    let mut diagnostics = SemanticDiagnostics::new(module_file_id.file_id(db.upcast())?);
     // TODO(spapini): when code changes in a file, all the AST items change (as they contain a path
     // to the green root that changes. Once ASTs are rooted on items, use a selector that picks only
     // the item instead of all the module data.
@@ -48,7 +52,10 @@ pub fn priv_constant_semantic_data(
     let const_ast = module_constants.get(&const_id).to_maybe()?;
     let syntax_db = db.upcast();
 
-    let mut resolver = Resolver::new(db, module_file_id);
+    let inference_id = InferenceId::LookupItemDeclaration(LookupItemId::ModuleItem(
+        ModuleItemId::Constant(const_id),
+    ));
+    let mut resolver = Resolver::new(db, module_file_id, inference_id);
 
     let const_type = resolve_type(
         db,
@@ -58,34 +65,38 @@ pub fn priv_constant_semantic_data(
     );
 
     let mut ctx =
-        ComputationContext::new(db, &mut diagnostics, resolver, None, Environment::default());
+        ComputationContext::new(db, &mut diagnostics, None, resolver, None, Environment::default());
     let value = compute_expr_semantic(&mut ctx, &const_ast.value(syntax_db));
     if let Err(err) = ctx.resolver.inference().conform_ty(value.ty(), const_type) {
         err.report(ctx.diagnostics, const_ast.stable_ptr().untyped());
     }
 
     // Check that the expression is a literal.
-    if !matches!(value.expr, Expr::Literal(_)) {
+    if let Expr::Literal(value) = &value.expr {
+        if let Err(err) = validate_literal(db, const_type, value.value.clone()) {
+            ctx.diagnostics.report(
+                &const_ast.value(syntax_db),
+                crate::diagnostic::SemanticDiagnosticKind::LiteralError(err),
+            );
+        }
+    } else {
         ctx.diagnostics.report(
             &const_ast.value(syntax_db),
             crate::diagnostic::SemanticDiagnosticKind::OnlyLiteralConstants,
         );
-    };
+    }
 
     let constant = Constant { value: value.expr };
 
     // Check fully resolved.
     if let Some((stable_ptr, inference_err)) = ctx.resolver.inference().finalize() {
-        inference_err.report(ctx.diagnostics, stable_ptr);
+        inference_err
+            .report(ctx.diagnostics, stable_ptr.unwrap_or(const_ast.stable_ptr().untyped()));
     }
-    let constant = ctx
-        .resolver
-        .inference()
-        .rewrite(constant)
-        .map_err(|err| err.report(ctx.diagnostics, const_ast.stable_ptr().untyped()))?;
+    let constant = ctx.resolver.inference().rewrite(constant).no_err();
 
     let resolver_data = Arc::new(ctx.resolver.data);
-    Ok(ConstantData { diagnostics: diagnostics.build(), constant, resolver_data })
+    Ok(ConstantData { diagnostics: diagnostics.build(), constant: Ok(constant), resolver_data })
 }
 
 /// Query implementation of [SemanticGroup::constant_semantic_diagnostics].
@@ -98,7 +109,7 @@ pub fn constant_semantic_diagnostics(
 
 /// Query implementation of [SemanticGroup::constant_semantic_data].
 pub fn constant_semantic_data(db: &dyn SemanticGroup, const_id: ConstantId) -> Maybe<Constant> {
-    Ok(db.priv_constant_semantic_data(const_id)?.constant)
+    db.priv_constant_semantic_data(const_id)?.constant
 }
 
 /// Query implementation of [crate::db::SemanticGroup::constant_resolver_data].

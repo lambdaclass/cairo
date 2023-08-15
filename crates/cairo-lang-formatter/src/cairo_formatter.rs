@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use anyhow::{anyhow, bail, Context, Result};
 use cairo_lang_filesystem::db::FilesGroup;
-use cairo_lang_filesystem::ids::{FileId, FileLongId, VirtualFile, CAIRO_FILE_EXTENSION};
+use cairo_lang_filesystem::ids::{FileId, FileKind, FileLongId, VirtualFile, CAIRO_FILE_EXTENSION};
 use cairo_lang_parser::utils::{get_syntax_root_and_diagnostics, SimpleParserDatabase};
 use diffy::{create_patch, PatchFormatter};
 use ignore::types::TypesBuilder;
@@ -112,6 +112,7 @@ impl FormattableInput for String {
             parent: None,
             name: "string_to_format".into(),
             content: Arc::new(self.clone()),
+            kind: FileKind::Module,
         })))
     }
 
@@ -128,6 +129,7 @@ impl FormattableInput for StdinFmt {
             parent: None,
             name: "<stdin>".into(),
             content: Arc::new(buffer),
+            kind: FileKind::Module,
         })))
     }
     fn overwrite_content(&self, content: String) -> Result<()> {
@@ -187,7 +189,7 @@ impl CairoFormatter {
     }
 
     /// Formats the path in place, writing changes to the files.
-    /// The ['FormattaableInput'] trait implementation defines the method for persisting changes.
+    /// The ['FormattableInput'] trait implementation defines the method for persisting changes.
     pub fn format_in_place(&self, input: &dyn FormattableInput) -> Result<FormatOutcome> {
         match format_input(input, &self.formatter_config)? {
             FormatOutcome::DiffFound(diff) => {

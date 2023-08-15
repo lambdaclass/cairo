@@ -16,7 +16,9 @@ use crate::diagnostic::{LoweringDiagnostic, LoweringDiagnosticKind, LoweringDiag
 use crate::ids::{ConcreteFunctionWithBodyId, FunctionWithBodyId};
 use crate::lower::context::{VarRequest, VariableAllocator};
 use crate::utils::{Rebuilder, RebuilderEx};
-use crate::{BlockId, FlatBlock, FlatBlockEnd, FlatLowered, Statement, VarRemapping, VariableId};
+use crate::{
+    BlockId, FlatBlock, FlatBlockEnd, FlatLowered, Statement, VarRemapping, VarUsage, VariableId,
+};
 
 /// data about inlining.
 #[derive(Debug, PartialEq, Eq)]
@@ -41,8 +43,9 @@ pub fn priv_inline_data(
     function_id: FunctionWithBodyId,
 ) -> Maybe<Arc<PrivInlineData>> {
     let semantic_function_id = function_id.base_semantic_function(db);
-    let mut diagnostics =
-        LoweringDiagnostics::new(semantic_function_id.module_file_id(db.upcast()));
+    let mut diagnostics = LoweringDiagnostics::new(
+        semantic_function_id.module_file_id(db.upcast()).file_id(db.upcast())?,
+    );
     let config = db.function_declaration_inline_config(semantic_function_id)?;
 
     let info = match config {
@@ -216,7 +219,7 @@ impl<'a, 'b> Rebuilder for Mapper<'a, 'b> {
                 let remapping = VarRemapping {
                     remapping: OrderedHashMap::from_iter(izip!(
                         self.outputs.iter().cloned(),
-                        returns.iter().copied()
+                        returns.iter().cloned()
                     )),
                 };
                 *end = FlatBlockEnd::Goto(self.return_block_id, remapping);
@@ -337,7 +340,7 @@ impl<'db> FunctionInlinerRewriter<'db> {
     pub fn inline_function(
         &mut self,
         function_id: ConcreteFunctionWithBodyId,
-        inputs: &[VariableId],
+        inputs: &[VarUsage],
         outputs: &[VariableId],
     ) -> Maybe<()> {
         let lowered =
@@ -363,7 +366,7 @@ impl<'db> FunctionInlinerRewriter<'db> {
         // The input variables need to be renamed to match the inputs to the function call.
         let renamed_vars = HashMap::<VariableId, VariableId>::from_iter(izip!(
             lowered.parameters.iter().cloned(),
-            inputs.iter().cloned()
+            inputs.iter().map(|var_usage| var_usage.var_id)
         ));
 
         let mut mapper = Mapper {

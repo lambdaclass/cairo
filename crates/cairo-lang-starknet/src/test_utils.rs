@@ -1,14 +1,15 @@
-use std::ops::DerefMut;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use cairo_lang_compiler::db::RootDatabase;
-use cairo_lang_compiler::project::setup_project;
+use cairo_lang_compiler::diagnostics::DiagnosticsReporter;
 use cairo_lang_compiler::CompilerConfig;
+use cairo_lang_filesystem::db::FilesGroup;
+use cairo_lang_filesystem::ids::{CrateLongId, Directory, FileLongId};
 use cairo_lang_test_utils::test_lock;
 use once_cell::sync::Lazy;
 
-use crate::allowed_libfuncs::DEFAULT_EXPERIMENTAL_LIBFUNCS_LIST;
+use crate::allowed_libfuncs::BUILTIN_ALL_LIBFUNCS_LIST;
 use crate::contract_class::compile_contract_in_prepared_db;
 use crate::plugin::StarkNetPlugin;
 
@@ -21,11 +22,11 @@ pub fn get_example_file_path(file_name: &str) -> PathBuf {
 
 /// Salsa database configured to find the corelib, when reused by different tests should be able to
 /// use the cached queries that rely on the corelib's code, which vastly reduces the tests runtime.
-static SHARED_DB: Lazy<Mutex<RootDatabase>> = Lazy::new(|| {
+pub static SHARED_DB: Lazy<Mutex<RootDatabase>> = Lazy::new(|| {
     Mutex::new(
         RootDatabase::builder()
             .detect_corelib()
-            .with_semantic_plugin(Arc::new(StarkNetPlugin::default()))
+            .with_macro_plugin(Arc::new(StarkNetPlugin::default()))
             .build()
             .unwrap(),
     )
@@ -34,19 +35,28 @@ static SHARED_DB: Lazy<Mutex<RootDatabase>> = Lazy::new(|| {
 /// Returns the compiled test contract, with replaced ids.
 pub fn get_test_contract(example_file_name: &str) -> crate::contract_class::ContractClass {
     let path = get_example_file_path(example_file_name);
-    let mut locked_db = test_lock(&SHARED_DB);
+    let locked_db = test_lock(&SHARED_DB);
     // Setting up the contract path.
-    let main_crate_ids =
-        setup_project(locked_db.deref_mut(), Path::new(&path)).expect("failed to setup project");
     let db = locked_db.snapshot();
+    drop(locked_db);
+    let file_id = db.intern_file(FileLongId::OnDisk(PathBuf::from(&path)));
+    let crate_id = db.intern_crate(CrateLongId::Virtual {
+        name: "test".into(),
+        root: Directory::Virtual {
+            files: [("lib.cairo".into(), file_id)].into(),
+            dirs: Default::default(),
+        },
+    });
+    let main_crate_ids = vec![crate_id];
+    let diagnostics_reporter = DiagnosticsReporter::default().with_extra_crates(&main_crate_ids);
     compile_contract_in_prepared_db(
         &db,
         None,
         main_crate_ids,
         CompilerConfig {
             replace_ids: true,
-            allowed_libfuncs_list_name: Some(DEFAULT_EXPERIMENTAL_LIBFUNCS_LIST.to_string()),
-            ..CompilerConfig::default()
+            allowed_libfuncs_list_name: Some(BUILTIN_ALL_LIBFUNCS_LIST.to_string()),
+            diagnostics_reporter,
         },
     )
     .expect("compile_path failed")

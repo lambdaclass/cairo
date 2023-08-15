@@ -1,19 +1,23 @@
-use cairo_lang_defs::diagnostic_utils::{StableLocation, StableLocationOption};
-use cairo_lang_defs::ids::ModuleFileId;
+use cairo_lang_defs::diagnostic_utils::StableLocation;
 use cairo_lang_diagnostics::{
-    DiagnosticAdded, DiagnosticEntry, DiagnosticLocation, Diagnostics, DiagnosticsBuilder,
+    DiagnosticAdded, DiagnosticEntry, DiagnosticLocation, DiagnosticNote, Diagnostics,
+    DiagnosticsBuilder,
 };
+use cairo_lang_filesystem::ids::FileId;
+use cairo_lang_semantic::corelib::LiteralError;
 use cairo_lang_semantic::db::SemanticGroup;
 use cairo_lang_semantic::expr::inference::InferenceError;
 use cairo_lang_syntax::node::ids::SyntaxStablePtrId;
 
+use crate::Location;
+
 pub struct LoweringDiagnostics {
     pub diagnostics: DiagnosticsBuilder<LoweringDiagnostic>,
-    pub module_file_id: ModuleFileId,
+    pub file_id: FileId,
 }
 impl LoweringDiagnostics {
-    pub fn new(module_file_id: ModuleFileId) -> Self {
-        Self { module_file_id, diagnostics: DiagnosticsBuilder::default() }
+    pub fn new(file_id: FileId) -> Self {
+        Self { file_id, diagnostics: DiagnosticsBuilder::default() }
     }
     pub fn build(self) -> Diagnostics<LoweringDiagnostic> {
         self.diagnostics.build()
@@ -23,20 +27,20 @@ impl LoweringDiagnostics {
         stable_ptr: SyntaxStablePtrId,
         kind: LoweringDiagnosticKind,
     ) -> DiagnosticAdded {
-        self.report_by_location(StableLocationOption::new(self.module_file_id, stable_ptr), kind)
+        self.report_by_location(Location::new(StableLocation::new(stable_ptr)), kind)
     }
     pub fn report_by_location(
         &mut self,
-        stable_location: StableLocationOption,
+        location: Location,
         kind: LoweringDiagnosticKind,
     ) -> DiagnosticAdded {
-        self.diagnostics.add(LoweringDiagnostic { stable_location: stable_location.unwrap(), kind })
+        self.diagnostics.add(LoweringDiagnostic { location, kind })
     }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct LoweringDiagnostic {
-    pub stable_location: StableLocation,
+    pub location: Location,
     pub kind: LoweringDiagnosticKind,
 }
 impl DiagnosticEntry for LoweringDiagnostic {
@@ -51,18 +55,10 @@ impl DiagnosticEntry for LoweringDiagnostic {
             LoweringDiagnosticKind::OnlyMatchZeroIsSupported => {
                 "Only match zero (match ... { 0 => ..., _ => ... }) is currently supported.".into()
             }
-            LoweringDiagnosticKind::VariableMoved { inference_error } => {
-                format!("Variable was previously moved. {}", inference_error.format(db))
-            }
-            LoweringDiagnosticKind::VariableNotDropped { drop_err, destruct_err } => {
-                format!(
-                    "Variable not dropped. {}. {}.",
-                    drop_err.format(db),
-                    destruct_err.format(db)
-                )
-            }
-            LoweringDiagnosticKind::DesnappingANonCopyableType { inference_error } => {
-                format!("Cannot desnap a non copyable type. {}", inference_error.format(db))
+            LoweringDiagnosticKind::VariableMoved { .. } => "Variable was previously moved.".into(),
+            LoweringDiagnosticKind::VariableNotDropped { .. } => "Variable not dropped.".into(),
+            LoweringDiagnosticKind::DesnappingANonCopyableType { .. } => {
+                "Cannot desnap a non copyable type.".into()
             }
             LoweringDiagnosticKind::UnsupportedMatchedValue => "Unsupported matched value. \
                                                                 Currently, only matches on enums \
@@ -85,7 +81,18 @@ impl DiagnosticEntry for LoweringDiagnostic {
             LoweringDiagnosticKind::MemberPathLoop => {
                 "Currently, loops must change the entire variable.".into()
             }
+            LoweringDiagnosticKind::UnexpectedError => {
+                "Unexpected error has occurred, Please submit a full bug report. \
+                See https://github.com/starkware-libs/cairo/issues/new/choose for instructions.\
+                "
+                .into()
+            }
+            LoweringDiagnosticKind::LiteralError(literal_error) => literal_error.format(db),
         }
+    }
+
+    fn notes(&self, _db: &Self::DbType) -> &[DiagnosticNote] {
+        &self.location.notes
     }
 
     #[allow(unreachable_patterns, clippy::single_match)]
@@ -93,12 +100,13 @@ impl DiagnosticEntry for LoweringDiagnostic {
         match &self.kind {
             LoweringDiagnosticKind::Unreachable { last_statement_ptr } => {
                 return self
+                    .location
                     .stable_location
                     .diagnostic_location_until(db.upcast(), *last_statement_ptr);
             }
             _ => {}
         }
-        self.stable_location.diagnostic_location(db.upcast())
+        self.location.stable_location.diagnostic_location(db.upcast())
     }
 }
 
@@ -114,8 +122,10 @@ pub enum LoweringDiagnosticKind {
     DesnappingANonCopyableType { inference_error: InferenceError },
     UnsupportedMatchedValue,
     UnsupportedMatchArms,
+    UnexpectedError,
     UnsupportedMatchArmNotAVariant,
     UnsupportedMatchArmOutOfOrder,
     CannotInlineFunctionThatMightCallItself,
     MemberPathLoop,
+    LiteralError(LiteralError),
 }

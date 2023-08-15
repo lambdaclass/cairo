@@ -2,7 +2,8 @@
 #[path = "casm_contract_class_test.rs"]
 mod test;
 
-use cairo_lang_casm::hints::Hint;
+use cairo_felt::Felt252;
+use cairo_lang_casm::hints::{Hint, PythonicHint};
 use cairo_lang_sierra::extensions::array::ArrayType;
 use cairo_lang_sierra::extensions::bitwise::BitwiseType;
 use cairo_lang_sierra::extensions::ec::EcOpType;
@@ -30,17 +31,22 @@ use convert_case::{Case, Casing};
 use itertools::{chain, Itertools};
 use num_bigint::BigUint;
 use num_integer::Integer;
-use num_traits::{Num, Signed};
+use num_traits::Signed;
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::allowed_libfuncs::AllowedLibfuncsError;
 use crate::compiler_version::current_compiler_version_id;
+use crate::contract::starknet_keccak;
 use crate::contract_class::{ContractClass, ContractEntryPoint};
 use crate::felt252_serde::{sierra_from_felt252s, Felt252SerdeError};
 
 /// The expected gas cost of an entrypoint.
 pub const ENTRY_POINT_COST: i32 = 10000;
+
+static CONSTRUCTOR_ENTRY_POINT_SELECTOR: Lazy<BigUint> =
+    Lazy::new(|| starknet_keccak(b"constructor"));
 
 #[derive(Error, Debug, Eq, PartialEq)]
 pub enum StarknetSierraCompilationError {
@@ -58,6 +64,8 @@ pub enum StarknetSierraCompilationError {
     InvalidEntryPointSignatureMissingArgs,
     #[error("Invalid entry point signature.")]
     InvalidEntryPointSignature,
+    #[error("Invalid constructor entry point.")]
+    InvalidConstructorEntryPoint,
     #[error("{0} is not a supported builtin type.")]
     InvalidBuiltinType(ConcreteTypeId),
     #[error("Invalid entry point signature - builtins are not in the expected order.")]
@@ -121,8 +129,8 @@ impl TypeResolver<'_> {
         }
 
         let [GenericArg::Type(element_ty)] = long_id.generic_args.as_slice() else {
-        return false;
-    };
+            return false;
+        };
 
         *self.get_generic_id(element_ty) == Felt252Type::id()
     }
@@ -134,7 +142,8 @@ impl TypeResolver<'_> {
         }
 
         let [GenericArg::UserType(_), GenericArg::Type(element_ty)] =
-            long_id.generic_args.as_slice() else {
+            long_id.generic_args.as_slice()
+        else {
             return false;
         };
 
@@ -142,22 +151,73 @@ impl TypeResolver<'_> {
     }
 
     fn is_valid_entry_point_return_type(&self, ty: &ConcreteTypeId) -> bool {
-        let long_id = self.get_long_id(ty);
-        if long_id.generic_id != EnumType::id() {
+        // The return type must be an enum with two variants: (result, error).
+        let Some((result_tuple_ty, err_ty)) = self.extract_result_ty(ty) else {
+            return false;
+        };
+
+        // The result variant must be a tuple with one element: Span<felt252>;
+        let Some(result_ty) = self.extract_struct1(result_tuple_ty) else {
+            return false;
+        };
+        if !self.is_felt252_span(result_ty) {
             return false;
         }
 
+        // If the error type is Array<felt252>, it's a good error type, using the old panic
+        // mechanism.
+        if self.is_felt252_array(err_ty) {
+            return true;
+        }
+
+        // Otherwise, the error type must be a struct with two fields: (panic, data)
+        let Some((_panic_ty, err_data_ty)) = self.extract_struct2(err_ty) else {
+            return false;
+        };
+
+        // The data field must be a Span<felt252>.
+        self.is_felt252_array(err_data_ty)
+    }
+
+    /// Extracts types `TOk`, `TErr` from the type `Result<TOk, TErr>`.
+    fn extract_result_ty(&self, ty: &ConcreteTypeId) -> Option<(&ConcreteTypeId, &ConcreteTypeId)> {
+        let long_id = self.get_long_id(ty);
+        if long_id.generic_id != EnumType::id() {
+            return None;
+        }
         let [GenericArg::UserType(_), GenericArg::Type(result_tuple_ty), GenericArg::Type(err_ty)] =
-            long_id.generic_args.as_slice() else {
-            return false;
+            long_id.generic_args.as_slice()
+        else {
+            return None;
         };
+        Some((result_tuple_ty, err_ty))
+    }
 
-        let [GenericArg::UserType(_), GenericArg::Type(result_ty)]
-            = self.get_long_id(result_tuple_ty).generic_args.as_slice() else {
-            return false;
+    /// Extracts type `T` from the tuple type `(T,)`.
+    fn extract_struct1(&self, ty: &ConcreteTypeId) -> Option<&ConcreteTypeId> {
+        let long_id = self.get_long_id(ty);
+        if long_id.generic_id != StructType::id() {
+            return None;
+        }
+        let [GenericArg::UserType(_), GenericArg::Type(ty0)] = long_id.generic_args.as_slice()
+        else {
+            return None;
         };
+        Some(ty0)
+    }
 
-        self.is_felt252_span(result_ty) && self.is_felt252_array(err_ty)
+    /// Extracts types `T0`, `T1` from the tuple type `(T0, T1)`.
+    fn extract_struct2(&self, ty: &ConcreteTypeId) -> Option<(&ConcreteTypeId, &ConcreteTypeId)> {
+        let long_id = self.get_long_id(ty);
+        if long_id.generic_id != StructType::id() {
+            return None;
+        }
+        let [GenericArg::UserType(_), GenericArg::Type(ty0), GenericArg::Type(ty1)] =
+            long_id.generic_args.as_slice()
+        else {
+            return None;
+        };
+        Some((ty0, ty1))
     }
 }
 
@@ -168,12 +228,7 @@ impl CasmContractClass {
         contract_class: ContractClass,
         add_pythonic_hints: bool,
     ) -> Result<Self, StarknetSierraCompilationError> {
-        let prime = BigUint::from_str_radix(
-            "800000000000011000000000000000000000000000000000000000000000001",
-            16,
-        )
-        .unwrap();
-
+        let prime = Felt252::prime();
         for felt252 in &contract_class.sierra_program {
             if felt252.value >= prime {
                 return Err(StarknetSierraCompilationError::ValueOutOfRange);
@@ -181,6 +236,16 @@ impl CasmContractClass {
         }
 
         let (_, _, program) = sierra_from_felt252s(&contract_class.sierra_program)?;
+
+        match &contract_class.entry_points_by_type.constructor.as_slice() {
+            [] => {}
+            [ContractEntryPoint { selector, .. }]
+                if selector == &*CONSTRUCTOR_ENTRY_POINT_SELECTOR => {}
+            _ => {
+                return Err(StarknetSierraCompilationError::InvalidConstructorEntryPoint);
+            }
+        };
+
         for entry_points in [
             &contract_class.entry_points_by_type.constructor,
             &contract_class.entry_points_by_type.external,
@@ -326,7 +391,7 @@ impl CasmContractClass {
                 hints
                     .iter()
                     .map(|(pc, hints)| {
-                        (*pc, hints.iter().map(|hint| hint.to_string()).collect_vec())
+                        (*pc, hints.iter().map(|hint| hint.get_pythonic_hint()).collect_vec())
                     })
                     .collect_vec(),
             )

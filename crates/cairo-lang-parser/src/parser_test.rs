@@ -263,7 +263,7 @@ pub fn fix_parser_tests() {
 /// Inputs:
 /// - cairo_code
 /// - top_level_kind - the highest SyntaxKind that is interesting. All other kinds, if not under it,
-///   are ignored.
+///   are ignored. If empty, the whole tree is printed.
 /// - ignored_kinds: Syntax kinds to ignore when printing. In this context, "ignore" means printing
 ///   the nodes themselves, but not their children.
 /// Outputs:
@@ -309,7 +309,8 @@ cairo_lang_test_utils::test_file_test!(
     diagnostic,
     "src/parser_test_data",
     {
-        exprs: "exprs",
+        expr_diagnostics: "expr_diagnostics",
+        enum_diagnostics: "enum_diagnostics",
         fn_: "fn",
         if_: "if",
         illegal_string_escapes: "illegal_string_escapes",
@@ -331,6 +332,7 @@ cairo_lang_test_utils::test_file_test!(
     {
         constant: "constant",
         enum_: "enum",
+        expr: "expr",
         loop_: "loop",
         item_free_function: "item_free_function",
         function_signature: "function_signature",
@@ -341,6 +343,8 @@ cairo_lang_test_utils::test_file_test!(
         if_else: "if_else",
         impl_alias: "impl_alias",
         literal: "literal",
+        string_literal: "string_literal",
+        logical_operator: "logical_operator",
         attribute_errors: "attribute_errors",
         module: "module",
         op_eq: "op_eq",

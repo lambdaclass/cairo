@@ -1,9 +1,4 @@
-use std::sync::Arc;
-
-use cairo_lang_defs::plugin::{
-    DynGeneratedFileAuxData, MacroPlugin, PluginDiagnostic, PluginGeneratedFile, PluginResult,
-};
-use cairo_lang_semantic::plugin::{AsDynMacroPlugin, SemanticPlugin, TrivialPluginAuxData};
+use cairo_lang_defs::plugin::{MacroPlugin, PluginDiagnostic, PluginGeneratedFile, PluginResult};
 use cairo_lang_syntax::attribute::structured::{
     Attribute, AttributeArg, AttributeArgVariant, AttributeStructurize,
 };
@@ -33,15 +28,6 @@ impl MacroPlugin for PanicablePlugin {
         generate_panicable_code(db, declaration, attributes)
     }
 }
-impl AsDynMacroPlugin for PanicablePlugin {
-    fn as_dyn_macro_plugin<'a>(self: Arc<Self>) -> Arc<dyn MacroPlugin + 'a>
-    where
-        Self: 'a,
-    {
-        self
-    }
-}
-impl SemanticPlugin for PanicablePlugin {}
 
 /// Generate code defining a panicable variant of a function marked with `#[panic_with]` attribute.
 fn generate_panicable_code(
@@ -69,13 +55,14 @@ fn generate_panicable_code(
 
     let signature = declaration.signature(db);
     let Some((inner_ty_text, success_variant, failure_variant)) =
-        extract_success_ty_and_variants(db, &signature) else {
+        extract_success_ty_and_variants(db, &signature)
+    else {
         return PluginResult {
             code: None,
             diagnostics: vec![PluginDiagnostic {
                 stable_ptr: signature.ret_ty(db).stable_ptr().untyped(),
-                message: "Currently only wrapping functions returning an Option<T> or \
-                    Result<T, E>".into(),
+                message: "Currently only wrapping functions returning an Option<T> or Result<T, E>"
+                    .into(),
             }],
             remove_original_item: false,
         };
@@ -129,7 +116,8 @@ fn generate_panicable_code(
                     }}
                 "#
             ),
-            aux_data: DynGeneratedFileAuxData(Arc::new(TrivialPluginAuxData {})),
+            patches: Default::default(),
+            aux_data: None,
         }),
         diagnostics: vec![],
         remove_original_item: false,
@@ -186,8 +174,9 @@ fn parse_arguments(db: &dyn SyntaxGroup, attr: &Attribute) -> Option<(SmolStr, S
         AttributeArg {
             variant: AttributeArgVariant::Unnamed { value: ast::Expr::Path(name), .. },
             ..
-        }
-    ] = &attr.args[..] else {
+        },
+    ] = &attr.args[..]
+    else {
         return None;
     };
 

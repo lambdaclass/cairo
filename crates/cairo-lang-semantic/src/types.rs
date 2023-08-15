@@ -3,18 +3,23 @@ use cairo_lang_defs::ids::{EnumId, ExternTypeId, GenericParamId, GenericTypeId, 
 use cairo_lang_diagnostics::{DiagnosticAdded, Maybe};
 use cairo_lang_proc_macros::SemanticObject;
 use cairo_lang_syntax::node::ast;
-use cairo_lang_syntax::node::stable_ptr::SyntaxStablePtr;
+use cairo_lang_syntax::node::ids::SyntaxStablePtrId;
 use cairo_lang_utils::{define_short_id, try_extract_matches, OptionFrom};
 use itertools::Itertools;
 
-use crate::corelib::{concrete_copy_trait, concrete_destruct_trait, concrete_drop_trait};
+use crate::corelib::{
+    concrete_copy_trait, concrete_destruct_trait, concrete_drop_trait,
+    concrete_panic_destruct_trait,
+};
 use crate::db::SemanticGroup;
 use crate::diagnostic::SemanticDiagnosticKind::*;
 use crate::diagnostic::{NotFoundItemType, SemanticDiagnostics};
-use crate::expr::inference::{InferenceResult, TypeVar};
-use crate::items::imp::{get_impl_at_context, ImplId, ImplLookupContext};
+use crate::expr::inference::canonic::ResultNoErrEx;
+use crate::expr::inference::{InferenceData, InferenceId, InferenceResult, TypeVar};
+use crate::items::imp::{ImplId, ImplLookupContext};
 use crate::resolve::{ResolvedConcreteItem, Resolver};
-use crate::{semantic, semantic_object_for_id};
+use crate::substitution::SemanticRewriter;
+use crate::{semantic, semantic_object_for_id, ConcreteTraitId};
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, SemanticObject)]
 pub enum TypeLongId {
@@ -83,7 +88,7 @@ impl TypeLongId {
             TypeLongId::GenericParameter(generic_param) => {
                 format!("{}", generic_param.name(db.upcast()))
             }
-            TypeLongId::Var(var) => format!("?{}", var.id),
+            TypeLongId::Var(var) => format!("?{}", var.id.0),
             TypeLongId::Missing(_) => "<missing>".to_string(),
         }
     }
@@ -345,10 +350,27 @@ pub struct TypeInfo {
     pub droppable: InferenceResult<ImplId>,
     pub duplicatable: InferenceResult<ImplId>,
     pub destruct_impl: InferenceResult<ImplId>,
+    pub panic_destruct_impl: InferenceResult<ImplId>,
+}
+
+/// Checks if there is at least one impl that can be inferred for a specific concrete trait.
+pub fn get_impl_at_context(
+    db: &dyn SemanticGroup,
+    lookup_context: ImplLookupContext,
+    concrete_trait_id: ConcreteTraitId,
+    stable_ptr: Option<SyntaxStablePtrId>,
+) -> InferenceResult<ImplId> {
+    let mut inference_data = InferenceData::new(InferenceId::NoContext);
+    let mut inference = inference_data.inference(db);
+    let impl_id = inference.new_impl_var(concrete_trait_id, stable_ptr, lookup_context)?;
+    if let Some((_, err)) = inference.finalize() {
+        return Err(err);
+    };
+    Ok(inference.rewrite(impl_id).no_err())
 }
 
 // TODO(spapini): type info lookup for non generic types needs to not depend on lookup_context.
-// This is to ensure that sierra genreator will see a consistent type info of types.
+// This is to ensure that sierra generator will see a consistent type info of types.
 /// Query implementation of [crate::db::SemanticGroup::type_info].
 pub fn type_info(
     db: &dyn SemanticGroup,
@@ -356,18 +378,15 @@ pub fn type_info(
     ty: TypeId,
 ) -> Maybe<TypeInfo> {
     // Dummy stable pointer for type inference variables, since inference is disabled.
-    let stable_ptr = db.intern_stable_ptr(SyntaxStablePtr::Root);
-    let destruct_impl = get_impl_at_context(
-        db,
-        lookup_context.clone(),
-        concrete_destruct_trait(db, ty),
-        stable_ptr,
-    );
     let droppable =
-        get_impl_at_context(db, lookup_context.clone(), concrete_drop_trait(db, ty), stable_ptr);
+        get_impl_at_context(db, lookup_context.clone(), concrete_drop_trait(db, ty), None);
     let duplicatable =
-        get_impl_at_context(db, lookup_context, concrete_copy_trait(db, ty), stable_ptr);
-    Ok(TypeInfo { droppable, duplicatable, destruct_impl })
+        get_impl_at_context(db, lookup_context.clone(), concrete_copy_trait(db, ty), None);
+    let destruct_impl =
+        get_impl_at_context(db, lookup_context.clone(), concrete_destruct_trait(db, ty), None);
+    let panic_destruct_impl =
+        get_impl_at_context(db, lookup_context, concrete_panic_destruct_trait(db, ty), None);
+    Ok(TypeInfo { droppable, duplicatable, destruct_impl, panic_destruct_impl })
 }
 
 /// Peels all wrapping Snapshot (`@`) from the type.

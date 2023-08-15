@@ -3,11 +3,13 @@ use std::sync::Arc;
 use cairo_lang_defs::ids::{
     ConstantId, EnumId, ExternFunctionId, ExternTypeId, FileIndex, FreeFunctionId,
     FunctionWithBodyId, ImplAliasId, ImplDefId, ImplFunctionId, LanguageElementId, LookupItemId,
-    ModuleFileId, ModuleId, ModuleItemId, StructId, SubmoduleId, TraitId, TypeAliasId, UseId,
+    ModuleFileId, ModuleId, ModuleItemId, StructId, SubmoduleId, TraitFunctionId, TraitId,
+    TypeAliasId, UseId,
 };
 use cairo_lang_diagnostics::Maybe;
 
 use crate::db::SemanticGroup;
+use crate::expr::inference::InferenceId;
 use crate::resolve::ResolverData;
 
 pub trait HasResolverData {
@@ -16,6 +18,9 @@ pub trait HasResolverData {
 
 pub trait LookupItemEx: HasResolverData {
     fn function_with_body(&self) -> Option<FunctionWithBodyId>;
+
+    /// Returns the resolver data of the parent generic item if exist.
+    fn resolver_context(&self, db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>>;
 }
 
 impl LookupItemEx for LookupItemId {
@@ -30,12 +35,35 @@ impl LookupItemEx for LookupItemId {
             _ => None,
         }
     }
+
+    fn resolver_context(&self, db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>> {
+        match self {
+            LookupItemId::ImplFunction(impl_function_id) => {
+                let impl_def_id = impl_function_id.impl_def_id(db.upcast());
+                let resolver_data = impl_def_id.resolver_data(db.upcast())?;
+                Ok(resolver_data)
+            }
+            LookupItemId::TraitFunction(item) => {
+                let trait_id = item.trait_id(db.upcast());
+                let resolver_data = trait_id.resolver_data(db.upcast())?;
+                Ok(resolver_data)
+            }
+            LookupItemId::ModuleItem(item) => {
+                // Top level does not have an outer context, create an empty resolver data.
+                let module_file_id = item.module_file_id(db.upcast());
+                let resolver_data =
+                    Arc::new(ResolverData::new(module_file_id, InferenceId::NoContext));
+                Ok(resolver_data)
+            }
+        }
+    }
 }
 
 impl HasResolverData for LookupItemId {
     fn resolver_data(&self, db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>> {
         match self {
             LookupItemId::ModuleItem(item) => item.resolver_data(db),
+            LookupItemId::TraitFunction(item) => item.resolver_data(db),
             LookupItemId::ImplFunction(item) => item.resolver_data(db),
         }
     }
@@ -69,7 +97,10 @@ impl HasResolverData for SubmoduleId {
     fn resolver_data(&self, _db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>> {
         let module_id = ModuleId::Submodule(*self);
         let module_file_id = ModuleFileId(module_id, FileIndex(0));
-        Ok(Arc::new(ResolverData::new(module_file_id)))
+        let inference_id = InferenceId::LookupItemDeclaration(LookupItemId::ModuleItem(
+            ModuleItemId::Submodule(*self),
+        ));
+        Ok(Arc::new(ResolverData::new(module_file_id, inference_id)))
     }
 }
 impl HasResolverData for UseId {
@@ -89,7 +120,10 @@ impl HasResolverData for ImplDefId {
 }
 impl HasResolverData for ExternTypeId {
     fn resolver_data(&self, db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>> {
-        Ok(Arc::new(ResolverData::new(self.module_file_id(db.upcast()))))
+        let inference_id = InferenceId::LookupItemDeclaration(LookupItemId::ModuleItem(
+            ModuleItemId::ExternType(*self),
+        ));
+        Ok(Arc::new(ResolverData::new(self.module_file_id(db.upcast()), inference_id)))
     }
 }
 impl HasResolverData for ExternFunctionId {
@@ -120,6 +154,12 @@ impl HasResolverData for TypeAliasId {
 impl HasResolverData for TraitId {
     fn resolver_data(&self, db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>> {
         db.trait_resolver_data(*self)
+    }
+}
+
+impl HasResolverData for TraitFunctionId {
+    fn resolver_data(&self, db: &dyn SemanticGroup) -> Maybe<Arc<ResolverData>> {
+        db.trait_function_resolver_data(*self)
     }
 }
 

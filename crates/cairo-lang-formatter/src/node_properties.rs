@@ -4,7 +4,7 @@ use cairo_lang_syntax::node::utils::{grandparent_kind, parent_kind};
 use cairo_lang_syntax::node::SyntaxNode;
 
 use crate::formatter_impl::{
-    BreakLinePointIndentation, BreakLinePointProperties, SyntaxNodeFormat, WrappingBreakLinePoints,
+    BreakLinePointIndentation, BreakLinePointProperties, BreakLinePointsPositions, SyntaxNodeFormat,
 };
 
 impl SyntaxNodeFormat for SyntaxNode {
@@ -19,6 +19,11 @@ impl SyntaxNodeFormat for SyntaxNode {
             | SyntaxKind::TokenRBrack
             | SyntaxKind::TokenLBrack
             | SyntaxKind::TokenSingleLineComment => true,
+            SyntaxKind::TokenNot
+                if matches!(grandparent_kind(db, self), Some(SyntaxKind::ExprInlineMacro)) =>
+            {
+                true
+            }
             SyntaxKind::TokenLParen
                 if matches!(grandparent_kind(db, self), Some(SyntaxKind::FunctionSignature)) =>
             {
@@ -68,11 +73,20 @@ impl SyntaxNodeFormat for SyntaxNode {
                         SyntaxKind::FunctionWithBody
                             | SyntaxKind::ItemExternFunction
                             | SyntaxKind::ExprFunctionCall
-                            | SyntaxKind::PatternEnum
                             | SyntaxKind::PatternStruct
                             | SyntaxKind::Attribute
                     )
                 ) =>
+            {
+                true
+            }
+            SyntaxKind::ExprPath
+                if matches!(parent_kind(db, self), Some(SyntaxKind::PatternEnum))
+                    && self
+                        .parent()
+                        .unwrap()
+                        .children(db)
+                        .any(|c| c.kind(db) == SyntaxKind::PatternEnumInnerPattern) =>
             {
                 true
             }
@@ -154,7 +168,7 @@ impl SyntaxNodeFormat for SyntaxNode {
             },
             Some(SyntaxKind::ItemEnum) => match self.kind(db) {
                 SyntaxKind::AttributeList => Some(1),
-                SyntaxKind::MemberList => Some(2),
+                SyntaxKind::VariantList => Some(2),
                 SyntaxKind::WrappedGenericParamList => Some(3),
                 _ => None,
             },
@@ -190,7 +204,9 @@ impl SyntaxNodeFormat for SyntaxNode {
                 | SyntaxKind::ExprParenthesized
                 | SyntaxKind::ExprPath
                 | SyntaxKind::ExprStructCtorCall
-                | SyntaxKind::ExprTuple
+                | SyntaxKind::ExprListParenthesized
+                | SyntaxKind::ExprListBraced
+                | SyntaxKind::ExprListBracketed
                 | SyntaxKind::ExprUnary => Some(2),
                 SyntaxKind::ElseClause => Some(3),
                 _ => None,
@@ -209,7 +225,9 @@ impl SyntaxNodeFormat for SyntaxNode {
                 | SyntaxKind::ExprParenthesized
                 | SyntaxKind::ExprPath
                 | SyntaxKind::ExprStructCtorCall
-                | SyntaxKind::ExprTuple
+                | SyntaxKind::ExprListParenthesized
+                | SyntaxKind::ExprListBraced
+                | SyntaxKind::ExprListBracketed
                 | SyntaxKind::ExprUnary => Some(10),
                 _ => None,
             },
@@ -226,7 +244,9 @@ impl SyntaxNodeFormat for SyntaxNode {
                 | SyntaxKind::ExprParenthesized
                 | SyntaxKind::ExprPath
                 | SyntaxKind::ExprStructCtorCall
-                | SyntaxKind::ExprTuple
+                | SyntaxKind::ExprListParenthesized
+                | SyntaxKind::ExprListBraced
+                | SyntaxKind::ExprListBracketed
                 | SyntaxKind::ExprUnary => Some(1),
                 SyntaxKind::TerminalEq => Some(10),
                 SyntaxKind::PatternEnum | SyntaxKind::PatternTuple | SyntaxKind::PatternStruct => {
@@ -239,7 +259,9 @@ impl SyntaxNodeFormat for SyntaxNode {
                 SyntaxKind::ExprParenthesized
                 | SyntaxKind::ExprList
                 | SyntaxKind::ExprBlock
-                | SyntaxKind::ExprTuple
+                | SyntaxKind::ExprListParenthesized
+                | SyntaxKind::ExprListBraced
+                | SyntaxKind::ExprListBracketed
                 | SyntaxKind::PatternTuple
                 | SyntaxKind::ModuleBody
                 | SyntaxKind::MatchArms
@@ -251,11 +273,13 @@ impl SyntaxNodeFormat for SyntaxNode {
                 | SyntaxKind::ImplicitsList
                 | SyntaxKind::ImplicitsClause
                 | SyntaxKind::MemberList
+                | SyntaxKind::VariantList
                 | SyntaxKind::ArgList
                 | SyntaxKind::Arg
                 | SyntaxKind::GenericArgList
                 | SyntaxKind::GenericParamList
                 | SyntaxKind::ArgListParenthesized
+                | SyntaxKind::ArgListBraced
                 | SyntaxKind::StatementList
                 | SyntaxKind::ItemList
                 | SyntaxKind::TraitItemList
@@ -269,339 +293,268 @@ impl SyntaxNodeFormat for SyntaxNode {
     fn get_wrapping_break_line_point_properties(
         &self,
         db: &dyn SyntaxGroup,
-    ) -> WrappingBreakLinePoints {
+    ) -> BreakLinePointsPositions {
         match parent_kind(db, self) {
-            Some(SyntaxKind::ItemList) => WrappingBreakLinePoints {
-                leading: None,
-                trailing: Some(BreakLinePointProperties::new(
+            Some(SyntaxKind::ItemList) => {
+                BreakLinePointsPositions::Trailing(BreakLinePointProperties::new(
                     1,
                     BreakLinePointIndentation::NotIndented,
                     false,
                     false,
-                )),
-            },
-            Some(SyntaxKind::StatementList) => WrappingBreakLinePoints {
-                leading: None,
-                trailing: Some(BreakLinePointProperties::new(
+                ))
+            }
+            Some(SyntaxKind::StatementList) => {
+                BreakLinePointsPositions::Trailing(BreakLinePointProperties::new(
                     10,
                     BreakLinePointIndentation::NotIndented,
                     false,
                     false,
-                )),
-            },
+                ))
+            }
             Some(SyntaxKind::TraitItemList) | Some(SyntaxKind::ImplItemList) => {
-                WrappingBreakLinePoints {
-                    leading: None,
-                    trailing: Some(BreakLinePointProperties::new(
-                        12,
-                        BreakLinePointIndentation::NotIndented,
-                        false,
-                        false,
-                    )),
-                }
+                BreakLinePointsPositions::Trailing(BreakLinePointProperties::new(
+                    12,
+                    BreakLinePointIndentation::NotIndented,
+                    false,
+                    false,
+                ))
             }
             Some(SyntaxKind::ModuleBody) if self.kind(db) == SyntaxKind::ItemList => {
-                WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
-                        14,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        14,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                }
+                BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
+                    14,
+                    BreakLinePointIndentation::IndentedWithTail,
+                    false,
+                    true,
+                ))
             }
-            Some(SyntaxKind::AttributeList) => WrappingBreakLinePoints {
-                leading: None,
-                trailing: Some(BreakLinePointProperties::new(
+            Some(SyntaxKind::AttributeList) => {
+                BreakLinePointsPositions::Trailing(BreakLinePointProperties::new(
                     20,
                     BreakLinePointIndentation::NotIndented,
                     false,
                     false,
-                )),
-            },
+                ))
+            }
             _ => match self.kind(db) {
                 SyntaxKind::ParamList
                 | SyntaxKind::ExprList
                 | SyntaxKind::ImplicitsList
-                | SyntaxKind::PatternList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                | SyntaxKind::PatternList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         2,
                         BreakLinePointIndentation::IndentedWithTail,
                         true,
                         false,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        2,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        true,
-                        false,
-                    )),
-                },
-                SyntaxKind::StructArgList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::StructArgList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         3,
                         BreakLinePointIndentation::IndentedWithTail,
                         true,
                         true,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        3,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        true,
-                        true,
-                    )),
-                },
-                SyntaxKind::UsePathList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::UsePathList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         3,
                         BreakLinePointIndentation::IndentedWithTail,
                         true,
                         false,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        3,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        true,
-                        false,
-                    )),
-                },
-                SyntaxKind::MemberList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::MemberList | SyntaxKind::VariantList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         3,
                         BreakLinePointIndentation::IndentedWithTail,
                         false,
                         true,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        3,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                },
-                SyntaxKind::ArgList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::ArgList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         3,
                         BreakLinePointIndentation::IndentedWithTail,
                         true,
                         false,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        3,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        true,
-                        false,
-                    )),
-                },
-                SyntaxKind::StatementList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::StatementList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         4,
                         BreakLinePointIndentation::IndentedWithTail,
                         false,
                         true,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        4,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                },
-                SyntaxKind::TraitItemList | SyntaxKind::ImplItemList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
-                        5,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        5,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                },
+                    ))
+                }
 
-                SyntaxKind::MatchArms => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                SyntaxKind::TraitItemList | SyntaxKind::ImplItemList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
+                        5,
+                        BreakLinePointIndentation::IndentedWithTail,
+                        false,
+                        true,
+                    ))
+                }
+                SyntaxKind::MatchArms => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         11,
                         BreakLinePointIndentation::IndentedWithTail,
                         false,
                         true,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        11,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        false,
-                        true,
-                    )),
-                },
-                SyntaxKind::GenericParamList => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::GenericParamList => {
+                    BreakLinePointsPositions::new_symmetric(BreakLinePointProperties::new(
                         6,
                         BreakLinePointIndentation::IndentedWithTail,
                         true,
                         false,
-                    )),
-                    trailing: Some(BreakLinePointProperties::new(
-                        6,
-                        BreakLinePointIndentation::IndentedWithTail,
-                        true,
-                        false,
-                    )),
-                },
-                SyntaxKind::TerminalComma
-                    if matches!(
-                        parent_kind(db, self),
-                        Some(SyntaxKind::ImplicitsList)
-                            | Some(SyntaxKind::ParamList)
-                            | Some(SyntaxKind::PatternStructParamList)
-                            | Some(SyntaxKind::PatternList)
-                            | Some(SyntaxKind::StructArgList)
-                            | Some(SyntaxKind::ArgList)
-                            | Some(SyntaxKind::ExprList)
-                            | Some(SyntaxKind::GenericArgList)
-                            | Some(SyntaxKind::GenericParamList)
-                    ) =>
-                {
-                    WrappingBreakLinePoints {
-                        leading: None,
-                        trailing: Some(BreakLinePointProperties::new(
-                            5,
-                            BreakLinePointIndentation::NotIndented,
-                            true,
-                            true,
-                        )),
-                    }
+                    ))
                 }
-                SyntaxKind::TerminalComma
-                    if matches!(
-                        parent_kind(db, self),
-                        Some(SyntaxKind::MemberList) | Some(SyntaxKind::MatchArms)
-                    ) =>
-                {
-                    WrappingBreakLinePoints {
-                        leading: None,
-                        trailing: Some(BreakLinePointProperties::new(
-                            6,
-                            BreakLinePointIndentation::NotIndented,
-                            false,
-                            true,
-                        )),
-                    }
-                }
-                SyntaxKind::TerminalComma
-                    if matches!(parent_kind(db, self), Some(SyntaxKind::UsePathList)) =>
-                {
-                    let mut trailing = BreakLinePointProperties::new(
-                        6,
-                        BreakLinePointIndentation::NotIndented,
-                        true,
-                        true,
-                    );
-                    trailing.set_single_breakpoint();
-                    WrappingBreakLinePoints { leading: None, trailing: Some(trailing) }
-                }
-                SyntaxKind::TerminalPlus => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                SyntaxKind::TerminalPlus => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
                         7,
                         BreakLinePointIndentation::Indented,
                         true,
                         true,
-                    )),
-                    trailing: None,
-                },
+                    ))
+                }
                 SyntaxKind::TerminalMinus
                     if parent_kind(db, self) != Some(SyntaxKind::ExprUnary) =>
                 {
-                    WrappingBreakLinePoints {
-                        leading: Some(BreakLinePointProperties::new(
-                            7,
-                            BreakLinePointIndentation::Indented,
-                            true,
-                            true,
-                        )),
-                        trailing: None,
-                    }
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
+                        7,
+                        BreakLinePointIndentation::Indented,
+                        true,
+                        true,
+                    ))
                 }
                 SyntaxKind::TerminalMul if parent_kind(db, self) != Some(SyntaxKind::ExprUnary) => {
-                    WrappingBreakLinePoints {
-                        leading: Some(BreakLinePointProperties::new(
-                            9,
-                            BreakLinePointIndentation::Indented,
-                            true,
-                            true,
-                        )),
-                        trailing: None,
-                    }
-                }
-                SyntaxKind::TerminalDiv => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
                         9,
                         BreakLinePointIndentation::Indented,
                         true,
                         true,
-                    )),
-                    trailing: None,
-                },
-                SyntaxKind::TerminalAnd => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::TerminalDiv => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
+                        9,
+                        BreakLinePointIndentation::Indented,
+                        true,
+                        true,
+                    ))
+                }
+                SyntaxKind::TerminalAndAnd => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
                         10,
                         BreakLinePointIndentation::Indented,
                         true,
                         true,
-                    )),
-                    trailing: None,
-                },
-                SyntaxKind::TerminalOr => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::TerminalOrOr => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
                         11,
                         BreakLinePointIndentation::Indented,
                         true,
                         true,
-                    )),
-                    trailing: None,
-                },
-                SyntaxKind::TerminalXor => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::TerminalAnd => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
                         12,
                         BreakLinePointIndentation::Indented,
                         true,
                         true,
-                    )),
-                    trailing: None,
-                },
-                SyntaxKind::TerminalDot => WrappingBreakLinePoints {
-                    leading: Some(BreakLinePointProperties::new(
+                    ))
+                }
+                SyntaxKind::TerminalOr => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
                         13,
                         BreakLinePointIndentation::Indented,
                         true,
+                        true,
+                    ))
+                }
+                SyntaxKind::TerminalXor => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
+                        14,
+                        BreakLinePointIndentation::Indented,
+                        true,
+                        true,
+                    ))
+                }
+                SyntaxKind::TerminalDot => {
+                    BreakLinePointsPositions::Leading(BreakLinePointProperties::new(
+                        15,
+                        BreakLinePointIndentation::Indented,
+                        true,
                         false,
-                    )),
-                    trailing: None,
-                },
+                    ))
+                }
                 SyntaxKind::TokenEq
                 | SyntaxKind::TokenPlusEq
                 | SyntaxKind::TokenMinusEq
                 | SyntaxKind::TokenMulEq
                 | SyntaxKind::TokenDivEq
-                | SyntaxKind::TokenModEq => WrappingBreakLinePoints {
-                    leading: None,
-                    trailing: Some(BreakLinePointProperties::new(
-                        14,
+                | SyntaxKind::TokenModEq => {
+                    BreakLinePointsPositions::Trailing(BreakLinePointProperties::new(
+                        16,
                         BreakLinePointIndentation::Indented,
                         true,
                         true,
-                    )),
-                },
-                _ => WrappingBreakLinePoints { leading: None, trailing: None },
+                    ))
+                }
+                _ => BreakLinePointsPositions::None,
             },
+        }
+    }
+    fn get_internal_break_line_point_properties(
+        &self,
+        db: &dyn SyntaxGroup,
+    ) -> BreakLinePointsPositions {
+        match self.kind(db) {
+            SyntaxKind::ImplicitsList
+            | SyntaxKind::ParamList
+            | SyntaxKind::PatternList
+            | SyntaxKind::PatternStructParamList
+            | SyntaxKind::StructArgList
+            | SyntaxKind::ArgList
+            | SyntaxKind::ExprList
+            | SyntaxKind::GenericArgList
+            | SyntaxKind::GenericParamList => BreakLinePointsPositions::List {
+                properties: BreakLinePointProperties::new(
+                    5,
+                    BreakLinePointIndentation::NotIndented,
+                    true,
+                    true,
+                ),
+                breaking_frequency: 2,
+            },
+            SyntaxKind::MatchArms | SyntaxKind::MemberList | SyntaxKind::VariantList => {
+                BreakLinePointsPositions::List {
+                    properties: BreakLinePointProperties::new(
+                        6,
+                        BreakLinePointIndentation::NotIndented,
+                        false,
+                        true,
+                    ),
+                    breaking_frequency: 2,
+                }
+            }
+            SyntaxKind::UsePathList => {
+                let mut properties = BreakLinePointProperties::new(
+                    6,
+                    BreakLinePointIndentation::NotIndented,
+                    true,
+                    true,
+                );
+                properties.set_single_breakpoint();
+                BreakLinePointsPositions::List { properties, breaking_frequency: 2 }
+            }
+            _ => BreakLinePointsPositions::None,
         }
     }
 

@@ -11,7 +11,8 @@ use cairo_lang_filesystem::db::FilesGroupEx;
 use cairo_lang_filesystem::flag::Flag;
 use cairo_lang_filesystem::ids::{CrateId, FlagId};
 use cairo_lang_lowering::ids::ConcreteFunctionWithBodyId;
-use cairo_lang_runner::{Arg, RunResultValue, SierraCasmRunner, DUMMY_BUILTIN_GAS_COST};
+use cairo_lang_runner::{token_gas_cost, Arg, RunResultValue, SierraCasmRunner};
+use cairo_lang_sierra::extensions::gas::CostTokenType;
 use cairo_lang_sierra_generator::db::SierraGenGroup;
 use cairo_lang_sierra_generator::replace_ids::replace_sierra_ids_in_program;
 use cairo_lang_sierra_to_casm::test_utils::build_metadata;
@@ -32,7 +33,7 @@ fn example_dir_data() -> ExampleDirData {
     let mut path = PathBuf::from(dir).parent().unwrap().to_owned();
     path.push("examples");
     let crate_ids = setup_project(&mut db, path.as_path()).expect("Project setup failed.");
-    DiagnosticsReporter::stderr().ensure(&db).unwrap();
+    DiagnosticsReporter::stderr().with_extra_crates(&crate_ids).ensure(&db).unwrap();
     (db.into(), crate_ids)
 }
 
@@ -71,9 +72,9 @@ fn checked_compile_to_sierra(
             if module_id.full_path(&db) != format!("examples::{name}") {
                 continue;
             }
-            for (free_func_id, _) in db.module_free_functions(*module_id).unwrap() {
+            for (free_func_id, _) in db.module_free_functions(*module_id).unwrap().iter() {
                 if let Some(function) =
-                    ConcreteFunctionWithBodyId::from_no_generics_free(db.upcast(), free_func_id)
+                    ConcreteFunctionWithBodyId::from_no_generics_free(db.upcast(), *free_func_id)
                 {
                     requested_function_ids.push(function)
                 }
@@ -191,7 +192,7 @@ fn run_function(
     )
     .expect("Failed setting up runner.");
     let result = runner
-        .run_function(
+        .run_function_with_starknet_context(
             // find first
             runner.find_function("").expect("Failed finding the function."),
             &params.iter().cloned().map(Arg::Value).collect_vec(),
@@ -266,7 +267,7 @@ fn run_function(
         "2dca1ad81a6107a9ef68c69f791bcdbda1df257aab76bd43ded73d96ed6227d", 16)]))]
 #[case::hash_chain_gas(
     "hash_chain_gas",
-    &[3].map(Felt252::from), Some(100000), Some(9880 + 3 * DUMMY_BUILTIN_GAS_COST),
+    &[3].map(Felt252::from), Some(100000), Some(9880 + 3 * token_gas_cost(CostTokenType::Pedersen)),
     RunResultValue::Success(vec![felt252_str!(
         "2dca1ad81a6107a9ef68c69f791bcdbda1df257aab76bd43ded73d96ed6227d", 16)]))]
 #[case::testing("testing", &[], None, None, RunResultValue::Success(vec![]))]
