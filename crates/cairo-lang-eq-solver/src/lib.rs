@@ -1,6 +1,7 @@
 //! Equation solving for Sierra generation.
 pub mod expr;
 
+use tracing::trace;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -21,6 +22,7 @@ pub fn try_solve_equations<Var: Clone + Debug + PartialEq + Eq + Hash>(
     mut equations: Vec<Expr<Var>>,
     minimization_vars: Vec<Vec<Var>>,
 ) -> Option<OrderedHashMap<Var, i64>> {
+    trace!("try_solve_equations");
     let mut accumulated_solution: OrderedHashMap<Var, i64> = Default::default();
     let (final_iter, high_rank_iters) = minimization_vars.split_last()?;
     // Iterating over the non-last minimization var layers.
@@ -55,6 +57,7 @@ pub fn try_solve_equations<Var: Clone + Debug + PartialEq + Eq + Hash>(
     }
     let final_layer_solution = try_solve_equations_iteration(&equations, final_iter)?;
     accumulated_solution.extend(final_layer_solution);
+    trace!("accumulated_solution: keys: {:?}", accumulated_solution.keys().count());
     Some(accumulated_solution)
 }
 
@@ -69,6 +72,7 @@ fn try_solve_equations_iteration<Var: Clone + Debug + PartialEq + Eq + Hash>(
     equations: &[Expr<Var>],
     target_vars: &[Var],
 ) -> Option<OrderedHashMap<Var, i64>> {
+    trace!("try_solve_equations_iteration");
     let mut vars = variables!();
     let mut orig_to_solver_var = OrderedHashMap::default();
     // Add all variables to structure and map.

@@ -2,6 +2,7 @@
 #[path = "function_generator_test.rs"]
 mod test;
 
+use tracing::trace;
 use std::sync::Arc;
 
 use cairo_lang_diagnostics::Maybe;
@@ -51,6 +52,7 @@ fn get_function_code(
     db: &dyn SierraGenGroup,
     function_id: ConcreteFunctionWithBodyId,
 ) -> Maybe<Arc<pre_sierra::Function>> {
+    trace!("get_function_code({:?})", function_id);
     let signature = function_id.signature(db.upcast())?;
     let lowered_function = &*db.concrete_function_with_body_lowered(function_id)?;
     let root_block = lowered_function.blocks.root_block()?;

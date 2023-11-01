@@ -1,3 +1,4 @@
+use tracing::trace;
 use cairo_lang_sierra::extensions::gas::CostTokenType;
 use cairo_lang_sierra::ids::FunctionId;
 use cairo_lang_sierra::program::Program;
@@ -12,6 +13,7 @@ use cairo_lang_utils::ordered_hash_map::OrderedHashMap;
 use thiserror::Error;
 
 /// Metadata provided with a Sierra program to simplify the compilation to casm.
+#[derive(Debug)]
 pub struct Metadata {
     /// AP changes information for Sierra user functions.
     pub ap_change_info: ApChangeInfo,
@@ -29,7 +31,7 @@ pub enum MetadataError {
 }
 
 /// Configuration for metadata computation.
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct MetadataComputationConfig {
     pub function_set_costs: OrderedHashMap<FunctionId, OrderedHashMap<CostTokenType, i32>>,
 }
@@ -40,6 +42,7 @@ pub fn calc_metadata(
     config: MetadataComputationConfig,
     no_eq_solver: bool,
 ) -> Result<Metadata, MetadataError> {
+    trace!("calc_metadata");
     let pre_function_set_costs = config
         .function_set_costs
         .iter()

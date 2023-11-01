@@ -1,3 +1,4 @@
+use tracing::trace;
 use std::collections::hash_map;
 use std::ops::{Add, Sub};
 
@@ -92,6 +93,8 @@ pub fn compute_costs<
     specific_cost_context: &SpecificCostContext,
     enforced_wallet_values: &OrderedHashMap<StatementIdx, CostType>,
 ) -> Result<GasInfo, CostError> {
+    trace!("compute_costs");
+
     let mut context = CostContext {
         program,
         get_cost_fn,
@@ -153,6 +156,8 @@ fn get_branch_requirements_dependencies(
     invocation: &Invocation,
     libfunc_cost: &[BranchCost],
 ) -> OrderedHashSet<StatementIdx> {
+    trace!("get_branch_requirements_dependencies(idx={:?})", idx);
+
     let mut res: OrderedHashSet<StatementIdx> = Default::default();
     for (branch_info, branch_cost) in zip_eq(&invocation.branches, libfunc_cost) {
         match branch_cost {
@@ -183,6 +188,8 @@ fn get_branch_requirements<
     invocation: &Invocation,
     libfunc_cost: &[BranchCost],
 ) -> Vec<WalletInfo<CostType>> {
+    trace!("get_branch_requirements(idx={:?})", idx);
+
     zip_eq(&invocation.branches, libfunc_cost)
         .map(|(branch_info, branch_cost)| {
             specific_context.get_branch_requirement(wallet_at_fn, idx, branch_info, branch_cost)
@@ -205,6 +212,8 @@ fn analyze_gas_statements<
     idx: &StatementIdx,
     variable_values: &mut VariableValues,
 ) {
+    trace!("analyze_gas_statements(idx={:?})", idx);
+
     let Statement::Invocation(invocation) = &context.program.get_statement(idx).unwrap() else {
         return;
     };
@@ -309,6 +318,8 @@ impl<CostType: CostTypeTrait> WalletInfo<CostType> {
         branches: Vec<Self>,
         target_value: Option<&CostType>,
     ) -> Self {
+        trace!("merge(branch_costs={}, branches={})", branch_costs.len(), branches.len());
+
         let n_branches = branches.len();
         let mut max_value =
             CostType::max(branches.iter().map(|wallet_info| wallet_info.value.clone()));
@@ -401,6 +412,8 @@ impl<'a, CostType: CostTypeTrait> CostContext<'a, CostType> {
         &mut self,
         specific_cost_context: &SpecificCostContext,
     ) -> Result<(), CostError> {
+        trace!("prepare_wallet");
+
         let topological_order =
             compute_topological_order(self.program.statements.len(), true, |current_idx| {
                 match &self.program.get_statement(current_idx).unwrap() {
@@ -436,6 +449,8 @@ impl<'a, CostType: CostTypeTrait> CostContext<'a, CostType> {
         idx: &StatementIdx,
         specific_cost_context: &SpecificCostContext,
     ) -> WalletInfo<CostType> {
+        trace!("no_cache_compute_wallet_at(idx={:?})", idx);
+
         match &self.program.get_statement(idx).unwrap() {
             Statement::Return(_) => Default::default(),
             Statement::Invocation(invocation) => {
@@ -464,6 +479,8 @@ impl<'a, CostType: CostTypeTrait> CostContext<'a, CostType> {
         &self,
         specific_cost_context: &SpecificCostContext,
     ) -> Result<UnorderedHashMap<StatementIdx, CostType>, CostError> {
+        trace!("compute_target_values");
+
         // Compute a topological order of the statements.
         // Unlike `prepare_wallet`:
         // * function calls are not treated as edges and
@@ -524,6 +541,8 @@ impl<'a, CostType: CostTypeTrait> CostContext<'a, CostType> {
         excess: &mut UnorderedHashMap<StatementIdx, CostType>,
         finalized_excess_statements: &mut UnorderedHashSet<StatementIdx>,
     ) {
+        trace!("handle_excess_at(idx={:?})", idx);
+
         let wallet_value = self.wallet_at_ex(idx, false).value;
 
         if let Some(enforced_wallet_value) = self.enforced_wallet_values.get(idx) {
@@ -618,6 +637,8 @@ fn compute_topological_order(
     detect_cycles: bool,
     dependencies_callback: impl Fn(&StatementIdx) -> Vec<StatementIdx>,
 ) -> Result<Vec<StatementIdx>, CostError> {
+    trace!("compute_topological_order");
+
     get_topological_ordering(
         detect_cycles,
         (0..n_statements).map(StatementIdx),
@@ -663,6 +684,8 @@ impl SpecificCostContextTrait<PreCost> for PreCostContext {
         branch_info: &BranchInfo,
         branch_cost: &BranchCost,
     ) -> WalletInfo<PreCost> {
+        trace!("get_branch_requirement");
+
         let branch_cost = match branch_cost {
             BranchCost::Regular { const_cost: _, pre_cost } => pre_cost.clone(),
             BranchCost::BranchAlign => Default::default(),
@@ -710,6 +733,8 @@ impl<'a> SpecificCostContextTrait<i32> for PostcostContext<'a> {
         wallet_value: &i32,
         future_wallet_value: i32,
     ) -> i32 {
+        trace!("get_gas_withdrawal");
+
         let BranchCost::WithdrawGas { const_cost, success: true, with_builtin_costs } = branch_cost
         else {
             panic!("Unexpected BranchCost: {:?}.", branch_cost);
@@ -727,6 +752,8 @@ impl<'a> SpecificCostContextTrait<i32> for PostcostContext<'a> {
         branch_info: &BranchInfo,
         branch_cost: &BranchCost,
     ) -> WalletInfo<i32> {
+        trace!("get_branch_requirement");
+
         let branch_cost_val = match branch_cost {
             BranchCost::Regular { const_cost, pre_cost: _ } => const_cost.cost(),
             BranchCost::BranchAlign => {
@@ -765,6 +792,8 @@ impl<'a> PostcostContext<'a> {
         const_cost: &ConstCost,
         with_builtin_costs: bool,
     ) -> i32 {
+        trace!("compute_withdraw_gas_cost");
+
         let mut amount = const_cost.cost();
 
         if with_builtin_costs {

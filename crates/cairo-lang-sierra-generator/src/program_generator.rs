@@ -1,3 +1,5 @@
+use tracing::instrument;
+use tracing::trace;
 use std::collections::VecDeque;
 use std::sync::Arc;
 
@@ -163,6 +165,7 @@ pub fn get_sierra_program_for_functions(
     db: &dyn SierraGenGroup,
     requested_function_ids: Vec<ConcreteFunctionWithBodyId>,
 ) -> Maybe<Arc<cairo_lang_sierra::program::Program>> {
+    trace!("get_sierra_program_for_functions");
     let mut functions: Vec<Arc<pre_sierra::Function>> = vec![];
     let mut statements: Vec<pre_sierra::Statement> = vec![];
     let mut processed_function_ids = UnorderedHashSet::<ConcreteFunctionWithBodyId>::default();
@@ -238,6 +241,7 @@ pub fn get_sierra_program(
     db: &dyn SierraGenGroup,
     requested_crate_ids: Vec<CrateId>,
 ) -> Maybe<Arc<cairo_lang_sierra::program::Program>> {
+    trace!("get_sierra_program");
     let mut requested_function_ids = vec![];
     for crate_id in requested_crate_ids {
         for module_id in db.crate_modules(crate_id).iter() {
@@ -251,5 +255,6 @@ pub fn get_sierra_program(
             }
         }
     }
+    trace!("requested_function_ids: {:?}", requested_function_ids);
     db.get_sierra_program_for_functions(requested_function_ids)
 }

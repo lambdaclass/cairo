@@ -2,6 +2,9 @@
 
 use std::path::{Path, PathBuf};
 
+use tracing::{trace};
+use tracing_subscriber::EnvFilter;
+
 use anyhow::{Context, Ok};
 use cairo_lang_compiler::db::RootDatabase;
 use cairo_lang_compiler::diagnostics::DiagnosticsReporter;
@@ -33,6 +36,14 @@ struct Args {
 }
 
 fn main() -> anyhow::Result<()> {
+
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::FmtSubscriber::builder()
+            .with_env_filter(EnvFilter::from_default_env())
+            .finish(),
+    ).unwrap();
+
+    trace!("Tracing activated");
     let args = Args::parse();
 
     // Check if args.path is a file or a directory.
@@ -41,6 +52,7 @@ fn main() -> anyhow::Result<()> {
     let db = &mut RootDatabase::builder().detect_corelib().build()?;
 
     let main_crate_ids = setup_project(db, Path::new(&args.path))?;
+    trace!("main_crate_ids: {:?}", &main_crate_ids);
 
     if DiagnosticsReporter::stderr().check(db) {
         anyhow::bail!("failed to compile: {}", args.path.display());
@@ -51,18 +63,22 @@ fn main() -> anyhow::Result<()> {
         .to_option()
         .with_context(|| "Compilation failed without any diagnostics.")?;
     let replacer = DebugReplacer { db };
+    trace!("available_gas: {:?}", args.available_gas);
     if args.available_gas.is_none() && sierra_program.requires_gas_counter() {
         anyhow::bail!("Program requires gas counter, please provide `--available-gas` argument.");
     }
 
     let contracts_info = get_contracts_info(db, main_crate_ids, &replacer)?;
+    trace!("contracts_info: {:?}", &contracts_info);
 
+    trace!("sierra_program = {:#?}", replacer.apply(&sierra_program));
     let runner = SierraCasmRunner::new(
         replacer.apply(&sierra_program),
         if args.available_gas.is_some() { Some(Default::default()) } else { None },
         contracts_info,
     )
     .with_context(|| "Failed setting up runner.")?;
+    trace!("Running...");
     let result = runner
         .run_function_with_starknet_context(
             runner.find_function("::main")?,
@@ -71,6 +87,7 @@ fn main() -> anyhow::Result<()> {
             StarknetState::default(),
         )
         .with_context(|| "Failed to run the function.")?;
+    trace!("Run complete");
     match result.value {
         cairo_lang_runner::RunResultValue::Success(values) => {
             println!("Run completed successfully, returning {values:?}")

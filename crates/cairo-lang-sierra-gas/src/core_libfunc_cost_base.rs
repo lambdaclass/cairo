@@ -1,3 +1,4 @@
+use tracing::trace;
 use std::iter;
 
 use cairo_lang_sierra::extensions::array::ArrayConcreteLibfunc;
@@ -122,6 +123,7 @@ pub fn core_libfunc_cost(
     libfunc: &CoreConcreteLibfunc,
     info_provider: &dyn CostInfoProvider,
 ) -> Vec<BranchCost> {
+    trace!("core_libfunc_cost");
     match libfunc {
         FunctionCall(FunctionCallConcreteLibfunc { function, .. }) => {
             vec![BranchCost::FunctionCall {
@@ -385,6 +387,7 @@ pub fn core_libfunc_postcost<Ops: CostOperations, InfoProvider: InvocationCostIn
     libfunc: &CoreConcreteLibfunc,
     info_provider: &InfoProvider,
 ) -> Vec<Ops::CostType> {
+    trace!("core_libfunc_postcost");
     let res = core_libfunc_cost(libfunc, info_provider);
     res.into_iter()
         .map(|cost| match cost {
@@ -445,6 +448,7 @@ pub fn core_libfunc_precost<Ops: CostOperations>(
     ops: &mut Ops,
     libfunc: &CoreConcreteLibfunc,
 ) -> Vec<Ops::CostType> {
+    trace!("core_libfunc_precost");
     let res = core_libfunc_cost(libfunc, &DummyCostInfoProvider {});
 
     res.into_iter()

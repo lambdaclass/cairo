@@ -1,3 +1,4 @@
+use tracing::trace;
 use cairo_lang_sierra::algorithm::topological_order::get_topological_ordering;
 use cairo_lang_sierra::extensions::gas::CostTokenType;
 use cairo_lang_sierra::ids::ConcreteLibfuncId;
@@ -28,6 +29,7 @@ pub fn generate_equations<
     program: &Program,
     get_cost: GetCost,
 ) -> Result<OrderedHashMap<CostTokenType, Vec<CostExpr>>, CostError> {
+    trace!("generate_equations");
     // Calculating first to fail early.
     let statement_topological_ordering = get_reverse_topological_ordering(program)?;
     // Vector containing the cost from a statement until the end of the function in some path (may

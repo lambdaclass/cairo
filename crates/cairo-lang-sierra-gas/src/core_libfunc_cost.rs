@@ -1,3 +1,4 @@
+use tracing::trace;
 use cairo_lang_sierra::extensions::core::CoreConcreteLibfunc;
 use cairo_lang_sierra::extensions::gas::CostTokenType;
 use cairo_lang_sierra::program::StatementIdx;
@@ -61,6 +62,7 @@ pub fn core_libfunc_cost<InfoProvider: InvocationCostInfoProvider>(
     libfunc: &CoreConcreteLibfunc,
     info_provider: &InfoProvider,
 ) -> Vec<Option<OrderedHashMap<CostTokenType, i64>>> {
+    trace!("core_libfunc_cost(idx={:?})", idx);
     let precost = core_libfunc_precost(&mut Ops { gas_info, idx: *idx }, libfunc);
     let postcost = core_libfunc_postcost(&mut Ops { gas_info, idx: *idx }, libfunc, info_provider);
     zip_eq(precost, postcost)

@@ -1,3 +1,4 @@
+use tracing::trace;
 use std::fmt::Display;
 
 use cairo_lang_sierra::extensions::gas::CostTokenType;
@@ -17,6 +18,7 @@ pub struct GasInfo {
 }
 impl GasInfo {
     pub fn combine(mut self, mut other: GasInfo) -> GasInfo {
+        trace!("combine");
         let variable_values = chain!(self.variable_values.keys(), other.variable_values.keys())
             .unique()
             .copied()

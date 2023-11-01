@@ -1,3 +1,4 @@
+use tracing::trace;
 use std::fmt;
 
 use anyhow::Result;
@@ -328,13 +329,15 @@ impl Program {
     ///
     /// This is determined by checking if the program uses any of gas-related libfuncs.
     pub fn requires_gas_counter(&self) -> bool {
-        self.libfunc_declarations.iter().any(|decl| {
+        let ret = self.libfunc_declarations.iter().any(|decl| {
             matches!(
                 decl.long_id.generic_id.0.as_str(),
                 WithdrawGasLibfunc::STR_ID
                     | BuiltinCostWithdrawGasLibfunc::STR_ID
                     | RedepositGasLibfunc::STR_ID
             )
-        })
+        });
+        trace!("requires_gas_counter = {:?}", ret);
+        ret
     }
 }

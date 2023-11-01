@@ -2,6 +2,7 @@
 //!
 //! This crate provides the gas computation for the Cairo programs.
 
+use tracing::trace;
 use cairo_lang_eq_solver::Expr;
 use cairo_lang_sierra::extensions::core::{CoreConcreteLibfunc, CoreLibfunc, CoreType};
 use cairo_lang_sierra::extensions::gas::{CostTokenType, GasConcreteLibfunc};
@@ -93,6 +94,7 @@ pub fn calc_gas_precost_info(
     program: &Program,
     function_set_costs: OrderedHashMap<FunctionId, OrderedHashMap<CostTokenType, i32>>,
 ) -> Result<GasInfo, CostError> {
+    trace!("calc_gas_precost_info");
     let registry = ProgramRegistry::<CoreType, CoreLibfunc>::new(program)?;
     calc_gas_info_inner(
         program,
@@ -109,6 +111,7 @@ pub fn calc_gas_precost_info(
 
 /// Calculates gas pre-cost information for a given program - the gas costs of non-step tokens.
 pub fn compute_precost_info(program: &Program) -> Result<GasInfo, CostError> {
+    trace!("compute_precost_info");
     let registry = ProgramRegistry::<CoreType, CoreLibfunc>::new(program)?;
     let type_sizes = get_type_size_map(program, &registry).unwrap();
 
@@ -133,6 +136,7 @@ pub fn calc_gas_postcost_info<ApChangeVarValue: Fn(StatementIdx) -> usize>(
     precost_gas_info: &GasInfo,
     ap_change_var_value: ApChangeVarValue,
 ) -> Result<GasInfo, CostError> {
+    trace!("calc_gas_postcost_info");
     let registry = ProgramRegistry::<CoreType, CoreLibfunc>::new(program)?;
     let type_sizes = get_type_size_map(program, &registry).unwrap();
     calc_gas_info_inner(
@@ -168,6 +172,7 @@ fn calc_gas_info_inner<
     function_set_costs: OrderedHashMap<FunctionId, OrderedHashMap<CostTokenType, i32>>,
     registry: &ProgramRegistry<CoreType, CoreLibfunc>,
 ) -> Result<GasInfo, CostError> {
+    trace!("calc_gas_info_inner");
     let mut equations = generate_equations::generate_equations(program, get_cost)?;
     let non_set_cost_func_entry_points: UnorderedHashSet<_> = program
         .funcs
@@ -269,6 +274,7 @@ pub fn compute_postcost_info(
     precost_gas_info: &GasInfo,
     enforced_function_costs: &OrderedHashMap<FunctionId, i32>,
 ) -> Result<GasInfo, CostError> {
+    trace!("compute_postcost_info");
     let registry = ProgramRegistry::<CoreType, CoreLibfunc>::new(program)?;
     let type_size_map = get_type_size_map(program, &registry).unwrap();
     let specific_cost_context =

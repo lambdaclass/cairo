@@ -1,7 +1,7 @@
+use tracing::trace;
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-
 use cairo_lang_defs::ids::ModuleId;
 use cairo_lang_filesystem::db::{CrateConfiguration, FilesGroupEx};
 use cairo_lang_filesystem::ids::{CrateId, CrateLongId, Directory};
@@ -26,6 +26,7 @@ pub fn setup_single_file_project(
     db: &mut dyn SemanticGroup,
     path: &Path,
 ) -> Result<CrateId, ProjectError> {
+    trace!("");
     match path.extension().and_then(OsStr::to_str) {
         Some("cairo") => (),
         _ => {
@@ -85,6 +86,7 @@ pub fn setup_project(
     db: &mut dyn SemanticGroup,
     path: &Path,
 ) -> Result<Vec<CrateId>, ProjectError> {
+    trace!("setup_project");
     if path.is_dir() {
         match ProjectConfig::from_directory(path) {
             Ok(config) => {

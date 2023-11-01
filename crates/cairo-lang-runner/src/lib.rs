@@ -1,4 +1,5 @@
 //! Basic runner for running a Sierra program on the vm.
+use tracing::trace;
 use std::collections::HashMap;
 
 use cairo_felt::Felt252;
@@ -94,13 +95,15 @@ pub enum RunResultValue {
 
 // Approximated costs token types.
 pub fn token_gas_cost(token_type: CostTokenType) -> usize {
-    match token_type {
+    let ret = match token_type {
         CostTokenType::Const => 1,
         CostTokenType::Pedersen => 4130,
         CostTokenType::Poseidon => 500,
         CostTokenType::Bitwise => 594,
         CostTokenType::EcOp => 4166,
-    }
+    };
+    trace!("token_gas_cost({:?}) = {:?})", token_type, ret);
+    ret
 }
 
 /// An argument to a sierra function run,
@@ -161,17 +164,21 @@ impl SierraCasmRunner {
         metadata_config: Option<MetadataComputationConfig>,
         starknet_contracts_info: OrderedHashMap<Felt252, ContractInfo>,
     ) -> Result<Self, RunnerError> {
+        trace!("new");
+        trace!("new|metadata_config: {:?}", metadata_config);
         let gas_usage_check = metadata_config.is_some();
         let metadata = create_metadata(&sierra_program, metadata_config)?;
+        trace!("new|metadata: {:#?}", metadata);
         let sierra_program_registry =
             ProgramRegistry::<CoreType, CoreLibfunc>::new(&sierra_program)?;
         let type_sizes = get_type_size_map(&sierra_program, &sierra_program_registry).unwrap();
+        trace!("new|compiling sierra to casm");
         let casm_program = cairo_lang_sierra_to_casm::compiler::compile(
             &sierra_program,
             &metadata,
             gas_usage_check,
         )?;
-
+        trace!("new|casm program: {:#?}", casm_program);
         // Find all contracts.
         Ok(Self {
             sierra_program,
@@ -191,6 +198,7 @@ impl SierraCasmRunner {
         available_gas: Option<usize>,
         starknet_state: StarknetState,
     ) -> Result<RunResultStarknet, RunnerError> {
+        trace!("run_function_with_starknet_context");
         let initial_gas = self.get_initial_available_gas(func, available_gas)?;
         let (entry_code, builtins) = self.create_entry_code(func, args, initial_gas)?;
         let footer = self.create_code_footer();
@@ -230,6 +238,7 @@ impl SierraCasmRunner {
     where
         Instructions: Iterator<Item = &'a Instruction> + Clone,
     {
+        trace!("run_function_with_vm");
         let (cells, ap) = casm_run::run_function(
             vm,
             instructions,
@@ -300,6 +309,7 @@ impl SierraCasmRunner {
     where
         Instructions: Iterator<Item = &'a Instruction> + Clone,
     {
+        trace!("run_function");
         let mut vm = VirtualMachine::new(true);
         self.run_function_with_vm(func, &mut vm, hint_processor, hints_dict, instructions, builtins)
     }
@@ -562,6 +572,7 @@ fn create_metadata(
     sierra_program: &cairo_lang_sierra::program::Program,
     metadata_config: Option<MetadataComputationConfig>,
 ) -> Result<Metadata, RunnerError> {
+    trace!("create_metadata");
     if let Some(metadata_config) = metadata_config {
         calc_metadata(sierra_program, metadata_config, false).map_err(|err| match err {
             MetadataError::ApChangeError(err) => RunnerError::ApChangeError(err),
